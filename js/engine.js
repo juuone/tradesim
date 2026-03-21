@@ -1004,13 +1004,53 @@ export function processDeposit(userId,depositId){
   const idx=deps.findIndex(d=>d.id===depositId); if(idx===-1) return;
   const dep=deps[idx];
   const r=Math.random();
-  const status=r<0.05?'rejected':r<0.1?'hold':'success';
-  const note={success:'Deposit berhasil',rejected:'Bukti tidak valid',hold:'Verifikasi tambahan'}[status];
+  const status=r<0.05?'failed':r<0.12?'hold':'success';
+  const note={success:'Deposit berhasil',failed:'Transfer gagal/ditolak',hold:'Menunggu verifikasi manual'}[status];
   deps[idx]={...dep,status,processedAt:new Date().toISOString(),adminNote:note};
   State.set(`deposits.${userId}`,[...deps]);
   if(status==='success'){const p=State.get(`portfolio.${userId}`)||initPortfolio(userId);p.cash_idr=(p.cash_idr||0)+dep.amountIDR;State.set(`portfolio.${userId}`,{...p});}
   State.emit('deposit.updated',deps[idx]);
   State.emit(`portfolio.${userId}`,State.get(`portfolio.${userId}`));
+  if(status==='hold') setTimeout(()=>processDeposit(userId,depositId),(5+Math.random()*8)*1000);
+}
+
+export function requestWithdraw(userId,amount,currency,method,destination){
+  const fxR=currency==='IDR'?1:getForexRate('USD/IDR');
+  const amountIDR=amount*fxR;
+  const port=State.get(`portfolio.${userId}`)||initPortfolio(userId);
+  const pendingWD=(port.pendingWithdrawIDR||0);
+  if((port.cash_idr||0)-pendingWD<amountIDR){
+    return {ok:false,error:`Saldo tersedia tidak cukup. Tersedia: ${fmtIDR((port.cash_idr||0)-pendingWD)}`};
+  }
+  port.pendingWithdrawIDR=pendingWD+amountIDR;
+  State.set(`portfolio.${userId}`,{...port});
+  const wd={id:'WD'+Date.now().toString(36).toUpperCase(),userId,amount,currency,method,destination,
+    amountIDR,status:'pending',type:'withdraw',createdAt:new Date().toISOString(),processedAt:null,adminNote:'Menunggu verifikasi'};
+  State.set(`deposits.${userId}`,[wd,...(State.get(`deposits.${userId}`)||[])]);
+  setTimeout(()=>processWithdraw(userId,wd.id),(4+Math.random()*8)*1000);
+  return {ok:true,withdraw:wd};
+}
+
+export function processWithdraw(userId,withdrawId){
+  const deps=State.get(`deposits.${userId}`)||[];
+  const idx=deps.findIndex(d=>d.id===withdrawId&&d.type==='withdraw'); if(idx===-1) return;
+  const wd=deps[idx];
+  if(wd.status!=='pending'&&wd.status!=='hold') return;
+  const r=Math.random();
+  const status=r<0.08?'failed':r<0.2?'hold':'success';
+  const note={success:'Dana berhasil dikirim',failed:'Penarikan ditolak/gagal',hold:'Penarikan tertahan untuk verifikasi'}[status];
+  deps[idx]={...wd,status,processedAt:new Date().toISOString(),adminNote:note};
+  State.set(`deposits.${userId}`,[...deps]);
+  const port=State.get(`portfolio.${userId}`)||initPortfolio(userId);
+  port.pendingWithdrawIDR=Math.max(0,(port.pendingWithdrawIDR||0)-wd.amountIDR);
+  if(status==='success'){
+    port.cash_idr=(port.cash_idr||0)-wd.amountIDR;
+    recordTx(userId,{type:'withdraw',symbol:'IDR',qty:1,price:wd.amountIDR,amount:wd.amountIDR,fee:0,orderId:wd.id,currency:'IDR'});
+  }
+  State.set(`portfolio.${userId}`,{...port});
+  State.emit('deposit.updated',deps[idx]);
+  State.emit(`portfolio.${userId}`,State.get(`portfolio.${userId}`));
+  if(status==='hold') setTimeout(()=>processWithdraw(userId,withdrawId),(6+Math.random()*8)*1000);
 }
 
 // ─── Forex ────────────────────────────────────────────────────

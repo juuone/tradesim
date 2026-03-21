@@ -146,9 +146,10 @@ a{color:var(--blue);text-decoration:none}
 .trade-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;padding-bottom:0}
 #trade-view-chart{flex-shrink:0;display:flex;flex-direction:column}
 .chart-toolbar{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--bg1);border-bottom:1px solid var(--border);flex-wrap:wrap}
-.tf-grp,.ind-grp,.spd-grp{display:flex;gap:2px}
-.tf-btn,.speed-btn,.ind-btn{padding:3px 7px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;color:var(--t2);transition:all .12s}
+.tf-grp,.ind-grp,.spd-grp,.zoom-grp{display:flex;gap:2px}
+.tf-btn,.speed-btn,.ind-btn,.zoom-btn{padding:3px 7px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;color:var(--t2);transition:all .12s}
 .tf-btn.active,.speed-btn.active,.ind-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.zoom-btn:hover{border-color:var(--blue);color:var(--blue)}
 .speed-day{background:rgba(240,180,41,.1);border-color:rgba(240,180,41,.3);color:var(--yellow)}
 #chart-container{height:240px;min-height:240px;max-height:240px;position:relative;background:var(--bg0);overflow:hidden;flex-shrink:0;display:block;width:100%}
 #chart-container canvas{display:block}
@@ -437,6 +438,7 @@ a{color:var(--blue);text-decoration:none}
 .badge-cancelled{background:rgba(240,64,64,.1);color:var(--dn)}
 .badge-success{background:rgba(29,185,122,.15);color:var(--up)}
 .badge-rejected{background:rgba(240,64,64,.1);color:var(--dn)}
+.badge-failed{background:rgba(240,64,64,.1);color:var(--dn)}
 .badge-hold{background:rgba(240,180,41,.15);color:var(--yellow)}
 
 /* ── Toasts ──────────────────────────────────────────────────── */

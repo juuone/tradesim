@@ -1,7 +1,7 @@
 // app.js v8 — complete rewrite with all features
 import State from './state.js';
 import { initMarket, startEngine, stopEngine, placeOrder, cancelOrder,
-         initPortfolio, requestDeposit, computeAUM, getForexRate, skipSimTime,
+         initPortfolio, requestDeposit, requestWithdraw, computeAUM, getForexRate, skipSimTime,
          subscribeToIPO, createCryptoCoin, rugPullCrypto,
          suspendAsset, unsuspendAsset, haltIHSG, resumeIHSG,
          claimDividend, claimAllDividends,
@@ -196,7 +196,11 @@ function subscribe() {
   });
   State.on('order.filled',o=>{toast(`✅ ${o.symbol} ${o.status==='filled'?'TERISI':'PARTIAL'}`,  'success');renderDesktopOrders();if(currentPage==='portfolio')renderPortfolio();});
   State.on('order.placed',()=>renderDesktopOrders());
-  State.on('order.cancelled',()=>{renderDesktopOrders();toast('Order dibatalkan','info');});
+  State.on('order.cancelled',()=>{
+    renderDesktopOrders();
+    if(currentPage==='portfolio') renderPortfolio();
+    toast('Order dibatalkan','info');
+  });
   State.on('news.new',()=>{if(currentPage==='home')renderHomeNews();if(currentPage==='news')renderNewsFull();});
   State.on('deposit.updated',dep=>{toast(`${dep.status==='success'?'✅':'❌'} ${fmtM(dep.amount,dep.currency)}`,dep.status==='success'?'success':'warn');if(currentPage==='wallet')renderWallet();updateDesktopPort();});
   State.on('dividend.available',div=>{
@@ -855,14 +859,14 @@ function renderWallet() {
       detail:`${d.method} · ${d.status}${d.adminNote?' · '+d.adminNote:''}`,
       when:d.createdAt,
     })),
-    ...txs.filter(tx=>['buy','sell','ipo_subscribe','dividend_claim','dividend_claim_all'].includes(tx.type)).map(tx=>{
-      const buyLike=['buy','ipo_subscribe'].includes(tx.type);
+    ...txs.filter(tx=>['buy','sell','ipo_subscribe','dividend_claim','dividend_claim_all','withdraw'].includes(tx.type)).map(tx=>{
+      const buyLike=['buy','ipo_subscribe','withdraw'].includes(tx.type);
       const inLike=['sell','dividend_claim','dividend_claim_all'].includes(tx.type);
       const sign=inLike?1:-1;
       return {
         t:new Date(tx.timestamp).getTime(),
         cls:buyLike?'wd':'dep',
-        type:tx.type==='ipo_subscribe'?'IPO Subscribe':tx.type==='dividend_claim'?'Claim Dividen':tx.type==='dividend_claim_all'?'Claim Semua Dividen':tx.type.toUpperCase(),
+        type:tx.type==='ipo_subscribe'?'IPO Subscribe':tx.type==='dividend_claim'?'Claim Dividen':tx.type==='dividend_claim_all'?'Claim Semua Dividen':tx.type==='withdraw'?'Withdraw':tx.type.toUpperCase(),
         up:sign>0,
         amountIDR:(tx.amount||0)*sign,
         detail:`${tx.symbol||'-'} · Qty ${(tx.qty||0).toLocaleString()} · ${fmtP(tx.price,tx.currency)}`,
@@ -900,15 +904,15 @@ function submitDeposit(){
 function submitWithdraw(){
   const sess=State.get('session');if(!sess)return;
   const amount=parseFloat($('wd-amount')?.value);const currency=$('wd-currency')?.value||'IDR';
+  const method=$('wd-method')?.value||'Transfer Bank BCA';
+  const destination=($('wd-account')?.value||'').trim();
   if(!amount||amount<=0){toast('Masukkan jumlah valid','error');return;}
-  const port=State.get(`portfolio.${sess.userId}`)||{};
-  const fxR=getForexRate('USD/IDR');
-  const availIDR=port.cash_idr||0;const need=currency==='IDR'?amount:amount*fxR;
-  if(need>availIDR){toast(`Saldo tidak cukup. Tersedia: ${fmtM(availIDR,'IDR')}`,'error');return;}
-  State.merge(`portfolio.${sess.userId}`,{cash_idr:availIDR-need});
-  const dep={id:'WD'+Date.now().toString(36).toUpperCase(),userId:sess.userId,amount,currency,method:'Withdraw',amountIDR:need,type:'withdraw',status:'success',createdAt:new Date().toISOString(),processedAt:new Date().toISOString(),adminNote:'Berhasil'};
-  State.set(`deposits.${sess.userId}`,[dep,...(State.get(`deposits.${sess.userId}`)||[])]);
-  State.saveToStorage();toast(`Withdraw ${fmtM(amount,currency)} berhasil`,'success');$('wd-amount').value='';renderWallet();
+  if(!destination){toast('Masukkan rekening/akun tujuan','error');return;}
+  const r=requestWithdraw(sess.userId,amount,currency,method,destination);
+  if(!r.ok){toast(`❌ ${r.error}`,'error');return;}
+  toast(`Withdraw ${fmtM(amount,currency)} diajukan (${method}) — status pending`,'info');
+  $('wd-amount').value=''; $('wd-account').value='';
+  renderWallet();
 }
 
 // ─── News Page ────────────────────────────────────────────────
@@ -1180,6 +1184,9 @@ function bindAll(){
     State.set('activeTimeframe',b.dataset.tf);if(chart&&chartInited)chart.load(State.get('activeAsset'),b.dataset.tf);
   }));
   document.querySelectorAll('.ind-btn').forEach(b=>b.addEventListener('click',()=>{b.classList.toggle('active');chart?.toggleIndicator(b.dataset.ind);}));
+  $('btn-zoom-in')?.addEventListener('click',()=>{chart?.zoomIn(2);});
+  $('btn-zoom-out')?.addEventListener('click',()=>{chart?.zoomOut(2);});
+  $('btn-zoom-reset')?.addEventListener('click',()=>{chart?.resetZoom();});
   document.querySelectorAll('.speed-btn:not(.speed-day)').forEach(b=>b.addEventListener('click',()=>{
     document.querySelectorAll('.speed-btn:not(.speed-day)').forEach(x=>x.classList.remove('active'));b.classList.add('active');
     State.set('simSpeed',parseInt(b.dataset.speed));updateSimTime();
