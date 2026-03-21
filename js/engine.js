@@ -258,16 +258,17 @@ function updatePrice(asset,simTime){
     const av=ob.asks.slice(0,3).reduce((s,l)=>s+l.qty,0);
     imb=(bv-av)/(bv+av+1)*0.0002;
   }
-  const boundedMove=clamp(change+imb,-lim,lim);
-  const spread=(LIQ[liq]?.spread||0.003)*ps.last;
-  let target=Math.max(0.000001,ps.last*(1+boundedMove));
-  let bestBid=round(target-spread*.5,dec),bestAsk=round(target+spread*.5,dec);
-  if(ob?.bids?.length&&ob?.asks?.length){
-    bestBid=ob.bids[0].price;
-    bestAsk=ob.asks[0].price;
-    target=(bestBid+bestAsk)*0.5;
-  }
-  const newLast=Math.max(0.000001,round(target,dec));
+  const orderPressure=getPendingOrderPressure(symbol);
+  const boundedMove=clamp(change+imb+orderPressure,-lim,lim);
+  const target=Math.max(0.000001,ps.last*(1+boundedMove));
+  refreshOrderBook(symbol,target,liq||'medium',dec);
+  const ob2=State.get(`orderBooks.${symbol}`)||ob;
+  const spread=(LIQ[liq]?.spread||0.003)*target;
+  const bestBid=ob2?.bids?.[0]?.price ?? round(target-spread*.5,dec);
+  const bestAsk=ob2?.asks?.[0]?.price ?? round(target+spread*.5,dec);
+  const fairMid=(bestBid+bestAsk)*0.5;
+  const targetTowardBook=target*0.35+fairMid*0.65;
+  const newLast=Math.max(0.000001,round(targetTowardBook,dec));
   const openP=ps.open>0?ps.open:newLast;
   const changePct=Math.max(-99,Math.min(99,round((newLast-openP)/openP*100,2)));
   State.set(`prices.${symbol}`,{...ps,last:newLast,
@@ -277,7 +278,24 @@ function updatePrice(asset,simTime){
     volume:(ps.volume||0)+Math.floor(Math.random()*5000),
   });
   updateCandles(symbol,simTime,newLast,Math.floor(Math.random()*5000));
-  refreshOrderBook(symbol,newLast,liq||'medium',dec);
+}
+
+function getPendingOrderPressure(symbol){
+  const ordersByUser=State.get('orders')||{};
+  let buyQty=0,sellQty=0;
+  Object.values(ordersByUser).forEach(list=>{
+    (list||[]).forEach(o=>{
+      if(o.symbol!==symbol) return;
+      if(!['pending','partial'].includes(o.status)) return;
+      const rem=Math.max(0,(o.qty||0)-(o.filledQty||0));
+      if(rem<=0) return;
+      if(o.side==='buy') buyQty+=rem;
+      else sellQty+=rem;
+    });
+  });
+  if(!buyQty&&!sellQty) return 0;
+  const net=(buyQty-sellQty)/(buyQty+sellQty+1);
+  return net*0.0025;
 }
 
 // ─── Correlations & AUM ──────────────────────────────────────
@@ -1002,7 +1020,6 @@ function updateCandles(symbol,simTime,price,vol){
 }
 
 function refreshOrderBook(symbol,mid,liqProfile,dec){
-  if(Math.random()>0.4) return;
   const cfg=LIQ[liqProfile]||LIQ.medium;
   const{baseSize,spread,levels}=cfg;
   const ob=State.get(`orderBooks.${symbol}`)||{bids:[],asks:[]};
