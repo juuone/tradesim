@@ -56,7 +56,7 @@ export function initMarket(assetsData) {
   const fxAssets=makeFxAssets();
   const cur=State.get('assets')||{};
   if (!cur.forex) { cur.forex=fxAssets; State.set('assets',{...cur}); }
-  [...all,...fxAssets,...(State.get('listedAssets')||[]),...(State.get('customAssets')||[])].forEach(a=>{
+  [...all,...fxAssets,...(State.get('listedAssets')||[]),...(State.get('customAssets')||[]).filter(isTradableAsset)].forEach(a=>{
     if (!State.get(`prices.${a.symbol}`)) initPrice(a);
     if (!State.get(`candles.${a.symbol}`)) initCandles(a.symbol,a.basePrice,a.vol||'normal');
     if (!State.get(`tradeTapes.${a.symbol}`)) State.set(`tradeTapes.${a.symbol}`,[]);
@@ -73,7 +73,8 @@ function makeFxAssets(){
   ];
 }
 
-function initPrice(a){
+function initPrice(a,opts={}){
+  const { freshBook=false } = opts;
   const dec=decimals(a.basePrice,a.currency);
   State.set(`prices.${a.symbol}`,{
     symbol:a.symbol,name:a.name,sector:a.sector||'',syariah:!!a.syariah,
@@ -82,20 +83,33 @@ function initPrice(a){
     bid:round(a.basePrice*0.999,dec),ask:round(a.basePrice*1.001,dec),
     volume:0,change:0,changePct:0,
   });
-  buildOrderBook(a.symbol,a.basePrice,a.liq||'medium');
+  buildOrderBook(a.symbol,a.basePrice,a.liq||'medium',freshBook);
 }
 
-export function buildOrderBook(symbol,mid,liqProfile){
+export function buildOrderBook(symbol,mid,liqProfile,isFresh=false){
   const{levels,baseSize,spread}=LIQ[liqProfile]||LIQ.medium;
+  const depth=isFresh?Math.max(2,Math.floor(levels*0.3)):levels;
+  const sizeMult=isFresh?0.08:1;
   const dec=mid<10?6:mid<1000?2:0;
   const bids=[],asks=[];
-  for(let i=1;i<=levels;i++){
+  for(let i=1;i<=depth;i++){
     const sf=spread*i,n=1+(Math.random()-.5)*.5,d=1/(1+i*.3);
-    bids.push({price:round(mid*(1-sf),dec),qty:Math.floor(baseSize*n*d)});
-    asks.push({price:round(mid*(1+sf),dec),qty:Math.floor(baseSize*n*d)});
+    bids.push({price:round(mid*(1-sf),dec),qty:Math.max(50,Math.floor(baseSize*sizeMult*n*d))});
+    asks.push({price:round(mid*(1+sf),dec),qty:Math.max(50,Math.floor(baseSize*sizeMult*n*d))});
   }
   bids.sort((a,b)=>b.price-a.price); asks.sort((a,b)=>a.price-b.price);
   State.set(`orderBooks.${symbol}`,{bids,asks});
+}
+
+function initFreshCandles(symbol,basePrice,simTime){
+  const now=(simTime||State.get('simTime')||new Date()).getTime();
+  const tfMs={ '1m':60e3,'5m':300e3,'15m':900e3,'1h':3.6e6,'4h':14.4e6,'1d':86.4e6 };
+  const seed={};
+  Object.entries(tfMs).forEach(([tf,ms])=>{
+    const t=Math.floor(now/ms)*ms;
+    seed[tf]=[{ t, o:basePrice, h:basePrice, l:basePrice, c:basePrice, v:0 }];
+  });
+  State.set(`candles.${symbol}`,seed);
 }
 
 function initCandles(symbol,base,volProfile){
@@ -150,7 +164,7 @@ export function tick(){
   const a=State.get('assets')||{};
   const all=[
     ...(a.stocks||[]),...(a.syariah||[]),...(a.crypto||[]),
-    ...(a.forex||[]),...(State.get('listedAssets')||[]),...(State.get('customAssets')||[]),
+    ...(a.forex||[]),...(State.get('listedAssets')||[]),...(State.get('customAssets')||[]).filter(isTradableAsset),
   ];
 
   all.forEach(asset=>{
@@ -245,12 +259,19 @@ function updatePrice(asset,simTime){
     imb=(bv-av)/(bv+av+1)*0.0002;
   }
   const boundedMove=clamp(change+imb,-lim,lim);
-  const newLast=Math.max(0.000001,round(ps.last*(1+boundedMove),dec));
-  const spread=(LIQ[liq]?.spread||0.003)*newLast;
+  const spread=(LIQ[liq]?.spread||0.003)*ps.last;
+  let target=Math.max(0.000001,ps.last*(1+boundedMove));
+  let bestBid=round(target-spread*.5,dec),bestAsk=round(target+spread*.5,dec);
+  if(ob?.bids?.length&&ob?.asks?.length){
+    bestBid=ob.bids[0].price;
+    bestAsk=ob.asks[0].price;
+    target=(bestBid+bestAsk)*0.5;
+  }
+  const newLast=Math.max(0.000001,round(target,dec));
   const openP=ps.open>0?ps.open:newLast;
   const changePct=Math.max(-99,Math.min(99,round((newLast-openP)/openP*100,2)));
   State.set(`prices.${symbol}`,{...ps,last:newLast,
-    bid:round(newLast-spread*.5,dec),ask:round(newLast+spread*.5,dec),
+    bid:bestBid,ask:bestAsk,
     high:Math.max(ps.high,newLast),low:Math.min(ps.low,newLast),
     change:round(newLast-openP,dec),changePct,
     volume:(ps.volume||0)+Math.floor(Math.random()*5000),
@@ -553,7 +574,8 @@ function checkIPOAutoListing(){
       const premium=Math.min((ipo.subscribed||1)/10,0.5);
       const lp=round(ipo.offerPrice*(1+premium),ipo.currency==='IDR'?0:4);
       if(!State.get(`prices.${ipo.symbol}`)){
-        initPrice({...ipo,basePrice:lp}); initCandles(ipo.symbol,lp,'high');
+        initPrice({...ipo,basePrice:lp},{freshBook:true});
+        initFreshCandles(ipo.symbol,lp,simNow);
       }
       // Add to listedAssets for normal trading
       const listed=State.get('listedAssets')||[];
@@ -631,7 +653,8 @@ export function createCryptoCoin(userId,{symbol,name,totalSupply,initialPrice,de
   listed.push({...asset,fromIPO:false});
   State.set('listedAssets',listed);
 
-  initPrice(asset); initCandles(symbol,initialPrice,'extreme');
+  initPrice(asset,{freshBook:true});
+  initFreshCandles(symbol,initialPrice,State.get('simTime')||new Date());
 
   // Announce
   const evt={id:'LAUNCH'+Date.now(),symbol,
@@ -980,10 +1003,18 @@ function updateCandles(symbol,simTime,price,vol){
 
 function refreshOrderBook(symbol,mid,liqProfile,dec){
   if(Math.random()>0.4) return;
-  const{baseSize,spread}=LIQ[liqProfile]||LIQ.medium;
+  const cfg=LIQ[liqProfile]||LIQ.medium;
+  const{baseSize,spread,levels}=cfg;
   const ob=State.get(`orderBooks.${symbol}`)||{bids:[],asks:[]};
   const bids=ob.bids.map((l,i)=>({price:round(mid*(1-(spread*(i+1))*(0.85+Math.random()*.3)),dec),qty:Math.max(100,l.qty+Math.floor((Math.random()-.5)*baseSize*.15))})).sort((a,b)=>b.price-a.price);
   const asks=ob.asks.map((l,i)=>({price:round(mid*(1+(spread*(i+1))*(0.85+Math.random()*.3)),dec),qty:Math.max(100,l.qty+Math.floor((Math.random()-.5)*baseSize*.15))})).sort((a,b)=>a.price-b.price);
+  if(bids.length<levels&&Math.random()<0.2){
+    const i=bids.length+1;
+    bids.push({price:round(mid*(1-spread*i),dec),qty:Math.max(100,Math.floor(baseSize*0.2))});
+    asks.push({price:round(mid*(1+spread*i),dec),qty:Math.max(100,Math.floor(baseSize*0.2))});
+    bids.sort((a,b)=>b.price-a.price);
+    asks.sort((a,b)=>a.price-b.price);
+  }
   State.set(`orderBooks.${symbol}`,{bids,asks});
   State.emit(`orderBook.${symbol}`,{bids,asks});
 }
@@ -1073,6 +1104,10 @@ function estimateFreeFloatShares(asset){
   if(base>=5000) return 20_000_000_000;
   if(base>=1000) return 35_000_000_000;
   return 60_000_000_000;
+}
+function isTradableAsset(asset){
+  if(!asset) return false;
+  return !asset.phase || asset.phase==='listed';
 }
 function decimals(price,currency){
   if(!currency||currency==='IDR') return price>1000?0:1;
