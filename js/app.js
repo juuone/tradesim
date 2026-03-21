@@ -216,12 +216,6 @@ function subscribe() {
   State.on('ipo.allocated',ev=>{
     const sess=State.get('session'); if(sess?.userId!==ev.userId) return;
     const gain=ev.gain||0;
-    toast(`🎉 ${ev.symbol} listing! ${ev.qty.toLocaleString()} lot @ ${fmtP(ev.offerPrice)}. Harga sekarang ${fmtP(ev.listingPrice)}. ${gain>=0?'+':''}\${fmtM(gain,'IDR')}`,gain>=0?'success':'warn');
-    if(currentPage==='portfolio') renderPortfolio();
-  });
-  State.on('ipo.allocated',ev=>{
-    const sess=State.get('session'); if(sess?.userId!==ev.userId) return;
-    const gain=ev.gain||0;
     toast(`🎉 ${ev.symbol} listing! ${ev.qty.toLocaleString()} lot @ ${fmtP(ev.offerPrice)}. Harga sekarang ${fmtP(ev.listingPrice)}. ${gain>=0?'+':''}${fmtM(gain,'IDR')}`,gain>=0?'success':'warn');
     if(currentPage==='portfolio') renderPortfolio();
   });
@@ -926,13 +920,23 @@ window.openIPOSubscribe=(sym)=>{
   const sess=State.get('session');if(!sess)return;
   const port=State.get(`portfolio.${sess.userId}`)||{};
   const maxLots=Math.floor((port.cash_idr||0)/(price*1.001));
-  const lotInput=prompt(`Subscribe IPO ${sym}\nHarga: ${fmtP(price,ipo.currency)}\nMaks lot kamu: ${maxLots.toLocaleString()}\n\nMasukkan jumlah lot:`);
-  if(!lotInput)return;
-  const lots=parseInt(lotInput);
-  if(!lots||lots<=0){toast('Jumlah lot tidak valid','error');return;}
-  const r=subscribeToIPO(sess.userId,sym,lots);
-  r.ok?toast(`✅ Subscribe ${sym} ${lots.toLocaleString()} lot berhasil! Dana ${fmtM(r.cost,'IDR')} diblokir.`,'success'):toast(`❌ ${r.error}`,'error');
-  renderIPOPage();
+  openInputModal({
+    title:`Subscribe IPO ${sym}`,
+    message:`Harga ${fmtP(price,ipo.currency)} · Maks lot ${maxLots.toLocaleString()}`,
+    placeholder:'Masukkan jumlah lot',
+    confirmText:'Subscribe',
+    defaultValue:'1',
+    inputType:'number',
+    onConfirm:(raw)=>{
+      const lots=parseInt(raw,10);
+      if(!lots||lots<=0){toast('Jumlah lot tidak valid','error');return false;}
+      const r=subscribeToIPO(sess.userId,sym,lots);
+      if(!r.ok){ toast(`❌ ${r.error}`,'error'); return false; }
+      toast(`✅ Subscribe ${sym} ${lots.toLocaleString()} lot berhasil! Dana ${fmtM(r.cost,'IDR')} diblokir.`,'success');
+      renderIPOPage();
+      return true;
+    },
+  });
 };
 
 function renderIPOPage(){
@@ -992,11 +996,34 @@ function renderControlPanel(){
 }
 
 window.suspendAssetUI=(sym)=>{
-  const reason=prompt(`Alasan suspensi ${sym}:`)||'Investigasi bursa';
-  suspendAsset(sym,reason); renderControlPanel();
+  openInputModal({
+    title:`Suspensi ${sym}`,
+    message:'Masukkan alasan suspensi aset.',
+    placeholder:'Contoh: Unusual market activity',
+    defaultValue:'Investigasi bursa',
+    confirmText:'Suspensi',
+    onConfirm:(reasonRaw)=>{
+      const reason=(reasonRaw||'').trim()||'Investigasi bursa';
+      suspendAsset(sym,reason); renderControlPanel();
+      return true;
+    },
+  });
 };
 window.unsuspendAssetUI=(sym)=>{ unsuspendAsset(sym); renderControlPanel(); };
-window.haltIHSGUI=()=>{ const reason=prompt('Alasan IHSG halt:')||'Circuit Breaker'; haltIHSG(reason); renderControlPanel(); };
+window.haltIHSGUI=()=>{
+  openInputModal({
+    title:'Halt IHSG',
+    message:'Masukkan alasan penghentian perdagangan sementara.',
+    placeholder:'Contoh: Circuit breaker level 1',
+    defaultValue:'Circuit Breaker',
+    confirmText:'Halt',
+    onConfirm:(reasonRaw)=>{
+      const reason=(reasonRaw||'').trim()||'Circuit Breaker';
+      haltIHSG(reason); renderControlPanel();
+      return true;
+    },
+  });
+};
 window.resumeIHSGUI=()=>{ resumeIHSG(); renderControlPanel(); };
 window.rugPullUI=(sym)=>{
   const sess=State.get('session');if(!sess)return;
@@ -1005,11 +1032,17 @@ window.rugPullUI=(sym)=>{
   if(!hld||hld.qty<=0){toast(`Kamu tidak pegang ${sym}. Bikin dulu crypto-nya.`,'error');return;}
   const ps=State.get(`prices.${sym}`);
   const val=round((ps?.last||0)*hld.qty,0);
-  const confirm=window.confirm(`⚠️ RUGPULL ${sym}?\n\nKamu akan jual semua ${hld.qty.toLocaleString()} lot senilai ${fmtM(val,'IDR')}.\n\n• Harga ${sym} akan crash 80-95%\n• 20% kemungkinan kena DENDA 150% = ${fmtM(val*1.5,'IDR')}\n• 80% aman, tapi banjir hujatan di sosmed\n\nLanjutkan?`);
-  if(!confirm)return;
-  const r=rugPullCrypto(sess.userId,sym);
-  if(r.ok){toast(`💰 Rugpull berhasil. Profit: ${fmtM(r.profit,'IDR')}${r.fined?` | ⚖️ DENDA: ${fmtM(r.fine,'IDR')}`:''}`,r.fined?'error':'warn');}
-  else toast(`❌ ${r.error}`,'error');
+  openConfirmModal({
+    title:`RUGPULL ${sym}`,
+    message:`Kamu akan jual ${hld.qty.toLocaleString()} lot (≈ ${fmtM(val,'IDR')}).\nHarga dapat crash 80-95% dan berisiko denda OJK 150%.`,
+    confirmText:'Lanjutkan',
+    danger:true,
+    onConfirm:()=>{
+      const r=rugPullCrypto(sess.userId,sym);
+      if(r.ok){toast(`💰 Rugpull berhasil. Profit: ${fmtM(r.profit,'IDR')}${r.fined?` | ⚖️ DENDA: ${fmtM(r.fine,'IDR')}`:''}`,r.fined?'error':'warn');}
+      else toast(`❌ ${r.error}`,'error');
+    }
+  });
 };
 
 // ─── Crypto Creator ───────────────────────────────────────────
@@ -1123,14 +1156,13 @@ function bindAll(){
     const port=State.get(`portfolio.${sess.userId}`)||{};
     if((port.cash_idr||0)<fee){toast(`Biaya listing: ${fmtM(fee,'IDR')}`,'error');return;}
     State.merge(`portfolio.${sess.userId}`,{cash_idr:(port.cash_idr||0)-fee});
-    const newA={symbol:sym,name,sector,basePrice:price,vol,liq:'medium',syariah:type==='syariah',currency:cur,custom:true,description:desc,phase:'listing',offerPrice:price,subscribed:1,phaseEnd:new Date(Date.now()+7*24*3600000).toISOString().substring(0,10)};
+    const simNow=State.get('simTime')||new Date();
+    const newA={symbol:sym,name,sector,basePrice:price,vol,liq:'medium',syariah:type==='syariah',currency:cur,custom:true,description:desc,phase:'prelisting',offerPrice:price,subscribed:0,phaseEnd:new Date(simNow.getTime()+2*24*3600000).toISOString()};
     State.set('customAssets',[...(State.get('customAssets')||[]),newA]);
-    const assets=State.get('assets')||{};if(!assets[type])assets[type]=[];assets[type].push(newA);State.set('assets',assets);assetsData=assets;
-    const dec=cur==='IDR'?0:6;
-    State.set(`prices.${sym}`,{symbol:sym,name,sector,syariah:type==='syariah',currency:cur,vol,liq:'medium',last:price,open:price,high:price,low:price,bid:round(price*.999,dec),ask:round(price*1.001,dec),volume:0,change:0,changePct:0});
-    const evt={id:'LIST'+Date.now(),symbol:sym,message:`${sym} (${name}) resmi listing! Harga perdana: ${fmtP(price,cur)}`,sentiment:0.05,category:'ipo',time:new Date().toISOString(),read:false};
+    const assets=State.get('assets')||{}; State.set('assets',assets); assetsData=assets;
+    const evt={id:'LIST'+Date.now(),symbol:sym,message:`${sym} (${name}) masuk antrean IPO. Fase prelisting dimulai sekarang.`,sentiment:0.03,category:'ipo',time:new Date().toISOString(),read:false};
     State.push('newsEvents',evt);State.emit('news.new',evt);State.saveToStorage();
-    toast(`🚀 ${sym} berhasil listing! Fee: ${fmtM(fee,'IDR')} dipotong`,'success');
+    toast(`🚀 ${sym} berhasil dibuat untuk IPO! Fee: ${fmtM(fee,'IDR')} dipotong`,'success');
     ['new-asset-symbol','new-asset-name','new-asset-price','new-asset-desc'].forEach(id=>{const e=$(id);if(e)e.value='';});
     renderIPOPage();renderSidebar();renderMarketLists();
   });
@@ -1174,6 +1206,47 @@ function toast(msg,type='info'){
   const t=document.createElement('div');t.className=`toast toast-${type}`;t.textContent=msg;
   c.appendChild(t);setTimeout(()=>t.classList.add('show'),10);
   setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);},4000);
+}
+function openInputModal({title,message,placeholder='',defaultValue='',confirmText='Simpan',inputType='text',onConfirm}){
+  const root=$('custom-modal-root'); if(!root) return;
+  root.innerHTML=`<div class="cm-backdrop">
+    <div class="cm-box">
+      <div class="cm-title">${title||'Input'}</div>
+      <div class="cm-msg">${message||''}</div>
+      <input id="cm-input" class="cm-input" type="${inputType}" value="${defaultValue||''}" placeholder="${placeholder||''}">
+      <div class="cm-actions">
+        <button id="cm-cancel" class="cm-btn">Batal</button>
+        <button id="cm-ok" class="cm-btn primary">${confirmText}</button>
+      </div>
+    </div>
+  </div>`;
+  root.classList.add('show');
+  const close=()=>{ root.classList.remove('show'); root.innerHTML=''; };
+  const input=$('cm-input');
+  $('cm-cancel')?.addEventListener('click',close);
+  $('cm-ok')?.addEventListener('click',()=>{
+    const shouldClose=onConfirm?onConfirm(input?.value):true;
+    if(shouldClose!==false) close();
+  });
+  input?.addEventListener('keydown',(e)=>{ if(e.key==='Enter') $('cm-ok')?.click(); });
+  setTimeout(()=>input?.focus(),25);
+}
+function openConfirmModal({title,message,confirmText='Lanjutkan',danger=false,onConfirm}){
+  const root=$('custom-modal-root'); if(!root) return;
+  root.innerHTML=`<div class="cm-backdrop">
+    <div class="cm-box">
+      <div class="cm-title">${title||'Konfirmasi'}</div>
+      <div class="cm-msg">${(message||'').replace(/\n/g,'<br>')}</div>
+      <div class="cm-actions">
+        <button id="cm-cancel" class="cm-btn">Batal</button>
+        <button id="cm-ok" class="cm-btn ${danger?'danger':'primary'}">${confirmText}</button>
+      </div>
+    </div>
+  </div>`;
+  root.classList.add('show');
+  const close=()=>{ root.classList.remove('show'); root.innerHTML=''; };
+  $('cm-cancel')?.addEventListener('click',close);
+  $('cm-ok')?.addEventListener('click',()=>{ onConfirm?.(); close(); });
 }
 function fmtP(price,currency){
   if(price===null||price===undefined||isNaN(price))return'-';

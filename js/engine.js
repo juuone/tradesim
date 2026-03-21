@@ -17,6 +17,9 @@ export const FEE_BUY  = 0.0015;
 export const FEE_SELL = 0.0025;
 const TICK_MS = 1000;
 const FX_BASE = { 'USD/IDR':15800,'EUR/IDR':17200,'GBP/IDR':19900,'XAU/IDR':30000000,'XAU/USD':1900 };
+const TICK_MOVE_LIMIT = {
+  bluechip:0.0035, stable:0.005, normal:0.008, high:0.014, extreme:0.03,
+};
 
 // Saham IDX yang bayar dividen (dunia nyata: harus pernah pegang saat cum-date)
 export const DIVIDEND_STOCKS = {
@@ -172,16 +175,16 @@ function updateIHSG(all){
   const stocks=all.filter(a=>a.currency==='IDR'&&!a.isForex&&!a.isCrypto);
   if(!stocks.length) return;
 
-  // IHSG = Laspeyres price-weighted index
-  // Base period: use basePrice as base. Index = 6000 * (Σ currentPrice) / (Σ basePrice)
-  // This mirrors how real IHSG tracks aggregate price movement
+  // IHSG approximation: free-float market cap weighted index
+  // Index = 6000 * (Σ (price * freeFloatShares)) / (Σ (basePrice * freeFloatShares))
   let sumCurrent=0, sumBase=0, count=0;
   stocks.forEach(a=>{
     const p=State.get(`prices.${a.symbol}`); if(!p) return;
     const base=a.basePrice||p.open||p.last;
     if(!base||base<=0) return;
-    sumCurrent+=p.last;
-    sumBase+=base;
+    const ffShares=estimateFreeFloatShares(a);
+    sumCurrent+=p.last*ffShares;
+    sumBase+=base*ffShares;
     count++;
   });
   if(!count||!sumBase) return;
@@ -228,7 +231,11 @@ function updatePrice(asset,simTime){
   const{base,spike}=VOL[vol]||VOL.normal;
   const dec=decimals(ps.last,currency);
   const vf=Math.random()<0.02?spike:base;
-  const change=(Math.random()-.495)*vf+(Math.random()-.5)*vf*.5;
+  const microTrend=((ps.last-(ps.open||ps.last))/(ps.open||ps.last))*-0.04;
+  const gaussian=(randn()+randn()*0.35)*vf;
+  const changeRaw=(gaussian*0.45)+microTrend;
+  const lim=TICK_MOVE_LIMIT[vol]||0.008;
+  const change=clamp(changeRaw,-lim,lim);
   const ob=State.get(`orderBooks.${symbol}`);
   let imb=0;
   if(ob?.bids?.length&&ob?.asks?.length){
@@ -236,7 +243,8 @@ function updatePrice(asset,simTime){
     const av=ob.asks.slice(0,3).reduce((s,l)=>s+l.qty,0);
     imb=(bv-av)/(bv+av+1)*0.0002;
   }
-  const newLast=Math.max(0.000001,round(ps.last*(1+change+imb),dec));
+  const boundedMove=clamp(change+imb,-lim,lim);
+  const newLast=Math.max(0.000001,round(ps.last*(1+boundedMove),dec));
   const spread=(LIQ[liq]?.spread||0.003)*newLast;
   const openP=ps.open>0?ps.open:newLast;
   const changePct=Math.max(-99,Math.min(99,round((newLast-openP)/openP*100,2)));
@@ -266,8 +274,9 @@ function applyCorrelations(){
       if(ihsgHalted){const sp2=State.get(`prices.${sym}`);if(sp2&&sp2.currency==='IDR'&&!sp2.isForex)return;}
       const sp=State.get(`prices.${sym}`); if(!sp) return;
       const corr=group.strength*(0.5+Math.random()*.5);
-      let effect=(lp.changePct/100)*corr;
+      let effect=(lp.changePct/100)*corr*0.1;
       if(group.canInverse&&Math.random()<0.15) effect=-effect;
+      effect=clamp(effect,-0.01,0.01);
       const dec=decimals(sp.last,sp.currency);
       const nl=Math.max(0.000001,round(sp.last*(1+effect),dec));
       const op=sp.open>0?sp.open:nl;
@@ -492,6 +501,15 @@ function checkIPOAutoListing(){
     src.list.forEach(ipo=>{
       if(!ipo.phaseEnd||ipo.phase==='listed') return;
       if(new Date(ipo.phaseEnd)>simNow) return;
+      if(ipo.phase==='prelisting'){
+        ipo.phase='subscription';
+        ipo.phaseEnd=new Date(simNow.getTime()+5*24*60*60*1000).toISOString();
+        const preEvt={id:'IPOPH'+Date.now()+ipo.symbol,symbol:ipo.symbol,
+          message:`📋 ${ipo.symbol} masuk fase subscription IPO.`,
+          sentiment:0.03,category:'ipo',time:simNow.toISOString(),read:false};
+        State.push('newsEvents',preEvt); State.emit('news.new',preEvt);
+        return;
+      }
       ipo.phase='listed'; anyListed=true;
       const premium=Math.min((ipo.subscribed||1)/10,0.5);
       const lp=round(ipo.offerPrice*(1+premium),ipo.currency==='IDR'?0:4);
@@ -960,6 +978,20 @@ export function fromIDR(amt,cur){return cur==='IDR'?amt:amt/getForexRate('USD/ID
 
 // ─── Utils ────────────────────────────────────────────────────
 export function round(v,dec){if(!dec||dec<=0)return Math.round(v);const f=10**dec;return Math.round(v*f)/f;}
+function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+function randn(){
+  const u1=Math.max(1e-12,Math.random());
+  const u2=Math.random();
+  return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);
+}
+function estimateFreeFloatShares(asset){
+  if(asset?.freeFloatShares&&asset.freeFloatShares>0) return asset.freeFloatShares;
+  const base=asset?.basePrice||1000;
+  if(base>=10000) return 12_000_000_000;
+  if(base>=5000) return 20_000_000_000;
+  if(base>=1000) return 35_000_000_000;
+  return 60_000_000_000;
+}
 function decimals(price,currency){
   if(!currency||currency==='IDR') return price>1000?0:1;
   return price>100?2:price>1?4:price>0.01?6:8;

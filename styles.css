@@ -448,6 +448,20 @@ a{color:var(--blue);text-decoration:none}
 .toast-warn{background:#2a200d;border-color:rgba(240,180,41,.4);color:var(--yellow)}
 .toast-info{background:var(--bg2);border-color:var(--border);color:var(--t1)}
 
+/* ── Custom Modal ───────────────────────────────────────────── */
+#custom-modal-root{position:fixed;inset:0;z-index:10020;display:none}
+#custom-modal-root.show{display:block}
+.cm-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px}
+.cm-box{width:min(420px,100%);background:var(--bg1);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.cm-title{font-size:16px;font-weight:800;color:var(--t1)}
+.cm-msg{margin-top:6px;font-size:12px;line-height:1.5;color:var(--t2)}
+.cm-input{margin-top:12px;width:100%;height:40px;border-radius:10px;border:1px solid var(--border2);background:var(--bg0);color:var(--t1);padding:0 12px;font-family:var(--mono)}
+.cm-input:focus{outline:none;border-color:rgba(26,111,255,.7)}
+.cm-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.cm-btn{height:36px;border-radius:9px;padding:0 14px;border:1px solid var(--border2);background:var(--bg2);color:var(--t2);font-weight:700;cursor:pointer}
+.cm-btn.primary{background:var(--blue);border-color:rgba(26,111,255,.35);color:#fff}
+.cm-btn.danger{background:var(--dn);border-color:rgba(240,64,64,.35);color:#fff}
+
 /* ── Negative balance warning ────────────────────────────────── */
 .neg-warn{background:rgba(240,64,64,.1);border:1px solid rgba(240,64,64,.4);border-radius:var(--r);padding:10px 13px;font-size:12px;color:var(--dn);margin-bottom:12px;line-height:1.5}
 
@@ -507,4 +521,3 @@ a{color:var(--blue);text-decoration:none}
 .ihm-name{font-size:9px;color:var(--t3)}
 .ihm-chg{font-family:var(--mono);font-size:12px;font-weight:700}
 .ihm-price{font-family:var(--mono);font-size:10px;color:var(--t2);text-align:right}
-
