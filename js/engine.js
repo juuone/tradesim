@@ -251,6 +251,7 @@ function updatePrice(asset,simTime){
   const changeRaw=(gaussian*0.45)+microTrend;
   const lim=TICK_MOVE_LIMIT[vol]||0.008;
   const change=clamp(changeRaw,-lim,lim);
+  const crowd=simulateParticipantPressure(asset,ps);
   const ob=State.get(`orderBooks.${symbol}`);
   let imb=0;
   if(ob?.bids?.length&&ob?.asks?.length){
@@ -259,7 +260,7 @@ function updatePrice(asset,simTime){
     imb=(bv-av)/(bv+av+1)*0.0002;
   }
   const orderPressure=getPendingOrderPressure(symbol);
-  const boundedMove=clamp(change+imb+orderPressure,-lim,lim);
+  const boundedMove=clamp(change+imb+orderPressure+crowd.pressure,-lim,lim);
   const target=Math.max(0.000001,ps.last*(1+boundedMove));
   refreshOrderBook(symbol,target,liq||'medium',dec);
   const ob2=State.get(`orderBooks.${symbol}`)||ob;
@@ -268,16 +269,41 @@ function updatePrice(asset,simTime){
   const bestAsk=ob2?.asks?.[0]?.price ?? round(target+spread*.5,dec);
   const fairMid=(bestBid+bestAsk)*0.5;
   const targetTowardBook=target*0.35+fairMid*0.65;
-  const newLast=Math.max(0.000001,round(targetTowardBook,dec));
+  let newLast=Math.max(0.000001,round(targetTowardBook,dec));
+  if(newLast===ps.last&&Math.abs(boundedMove)>0.00035){
+    const tick=tickSize(ps.last,currency);
+    const dir=boundedMove>0?1:-1;
+    newLast=Math.max(0.000001,round(ps.last+dir*tick,dec));
+  }
   const openP=ps.open>0?ps.open:newLast;
   const changePct=Math.max(-99,Math.min(99,round((newLast-openP)/openP*100,2)));
   State.set(`prices.${symbol}`,{...ps,last:newLast,
     bid:bestBid,ask:bestAsk,
     high:Math.max(ps.high,newLast),low:Math.min(ps.low,newLast),
     change:round(newLast-openP,dec),changePct,
-    volume:(ps.volume||0)+Math.floor(Math.random()*5000),
+    volume:(ps.volume||0)+Math.floor(Math.random()*5000)+crowd.extraVolume,
   });
   updateCandles(symbol,simTime,newLast,Math.floor(Math.random()*5000));
+}
+
+function simulateParticipantPressure(asset,ps){
+  // Simulasi pelaku pasar: ritel kecil, ritel besar, dan bandar.
+  const basePrice=ps?.last||asset?.basePrice||1;
+  const liq=asset?.liq||'medium';
+  const vol=asset?.vol||'normal';
+  const liqMult=liq==='thick'?0.7:liq==='thin'?1.4:1;
+  const volMult=vol==='bluechip'?0.7:vol==='extreme'?1.8:1;
+  const trend=((ps.last-(ps.open||ps.last))/(ps.open||ps.last));
+
+  const ritelKecil=(Math.random()-0.5)*0.0007*liqMult;
+  const ritelBesar=(Math.random()-0.5)*0.0016*volMult;
+  const bandarShock=(Math.random()<0.06?(Math.random()-0.5)*0.006*volMult:0);
+  const trendFollow=trend*0.08;
+
+  const pressure=clamp(ritelKecil+ritelBesar+bandarShock+trendFollow,-0.012,0.012);
+  const baseVol=liq==='thick'?12000:liq==='thin'?1800:5000;
+  const extraVolume=Math.max(0,Math.floor(baseVol*(Math.abs(pressure)*40+Math.random()*0.4)));
+  return { pressure, extraVolume };
 }
 
 function getPendingOrderPressure(symbol){
@@ -1125,6 +1151,12 @@ function estimateFreeFloatShares(asset){
 function isTradableAsset(asset){
   if(!asset) return false;
   return !asset.phase || asset.phase==='listed';
+}
+function tickSize(price,currency){
+  if(currency&&currency!=='IDR') return price>100?0.01:price>1?0.001:0.000001;
+  if(price>=5000) return 5;
+  if(price>=200) return 1;
+  return 0.1;
 }
 function decimals(price,currency){
   if(!currency||currency==='IDR') return price>1000?0:1;
