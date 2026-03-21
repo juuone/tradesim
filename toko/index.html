@@ -4,72 +4,130 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TokoSim</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="top">
-    <h1>🛍️ TokoSim</h1>
-    <div id="sim-time">-</div>
-  </header>
+  <div class="bg-glow bg-glow-a"></div>
+  <div class="bg-glow bg-glow-b"></div>
 
-  <section class="cards">
-    <div class="card"><label>Kas</label><b id="cash">Rp0</b></div>
-    <div class="card"><label>Omzet Bulan Ini</label><b id="revenue">Rp0</b></div>
-    <div class="card"><label>Laba Bersih</label><b id="profit">Rp0</b></div>
-    <div class="card"><label>Cabang</label><b id="branches-count">0</b></div>
-  </section>
+  <nav class="navbar">
+    <div class="brand-wrap">
+      <div class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="40" rx="12" fill="url(#brand-grad)"/>
+          <path d="M14 17h20l-2 18a2 2 0 0 1-2 2H18a2 2 0 0 1-2-2l-2-18Z" stroke="white" stroke-width="2.2"/>
+          <path d="M19 17a5 5 0 0 1 10 0" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="brand-grad" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#2B7BFF"/>
+              <stop offset="1" stop-color="#0E57DA"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">TokoSim</div>
+        <div class="brand-sub">Mini Business Simulator</div>
+      </div>
+    </div>
+    <div class="nav-links">
+      <a class="nav-link" href="https://juuone.github.io/tradesim/" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 10a1 1 0 0 1 1-1h8V6.414L10.707 7.707a1 1 0 0 1-1.414-1.414l3-3a1 1 0 0 1 1.414 0l3 3a1 1 0 1 1-1.414 1.414L14 6.414V10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/><path d="M3 13a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"/></svg>
+        TradeSim
+      </a>
+      <a class="nav-link" href="https://juuone.github.io/tradesim/toko/" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2h1a1 1 0 1 1 0 2h-1v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8H3a1 1 0 1 1 0-2h1V4Zm2 2h8V4H6v2Zm0 2v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V8H6Z"/></svg>
+        Shortcut
+      </a>
+    </div>
+  </nav>
 
-  <section class="panel">
-    <h3>Kontrol</h3>
-    <div class="row">
-      <input id="branch-name" placeholder="Nama cabang" />
-      <input id="branch-city" placeholder="Kota" />
-      <button id="btn-add-branch">+ Cabang (Rp2jt)</button>
-    </div>
-    <div class="row">
-      <select id="branch-select"></select>
-      <select id="product-select">
-        <option value="burger">Burger</option>
-        <option value="shirt">Baju</option>
-        <option value="software">Software Game</option>
-      </select>
-      <input id="set-price" type="number" placeholder="Harga jual" />
-      <button id="btn-set-price">Set Harga</button>
-    </div>
-    <div class="row">
-      <select id="material-select">
-        <option value="roti">Roti</option><option value="saos">Saos</option><option value="sosis">Sosis</option>
-        <option value="kain">Kain</option><option value="benang">Benang</option><option value="license">Lisensi</option>
-        <option value="cabe">Cabe</option>
-      </select>
-      <input id="material-qty" type="number" value="10" min="1" />
-      <button id="btn-buy-material">Beli Bahan</button>
-      <button id="btn-craft">Produksi Produk</button>
-    </div>
-    <div class="row">
-      <input id="promo-budget" type="number" placeholder="Budget promosi" />
-      <button id="btn-promo">Aktifkan Promosi</button>
-    </div>
-  </section>
+  <main class="container">
+    <header class="header">
+      <div>
+        <h1>Kelola Cabang, Produksi, dan Cashflow</h1>
+        <p>Bangun jaringan toko dari nol, atur harga produk, dan optimalkan profit per bulan.</p>
+      </div>
+      <div class="clock-card">
+        <span>Simulasi</span>
+        <b id="sim-time">-</b>
+      </div>
+    </header>
 
-  <section class="panel">
-    <h3>Transfer TradeSim ↔ Toko</h3>
-    <div class="row">
-      <input id="transfer-amount" type="number" placeholder="Jumlah" />
-      <button id="btn-from-trade">Ambil dari TradeSim</button>
-      <button id="btn-to-trade">Kirim ke TradeSim</button>
-    </div>
-  </section>
+    <section class="cards">
+      <article class="card stat">
+        <label>Kas</label>
+        <b id="cash">Rp0</b>
+      </article>
+      <article class="card stat">
+        <label>Omzet Bulan Ini</label>
+        <b id="revenue">Rp0</b>
+      </article>
+      <article class="card stat">
+        <label>Laba Bersih</label>
+        <b id="profit">Rp0</b>
+      </article>
+      <article class="card stat">
+        <label>Total Cabang</label>
+        <b id="branches-count">0</b>
+      </article>
+    </section>
 
-  <section class="panel">
-    <h3>Cabang & Stok</h3>
-    <div id="branches"></div>
-  </section>
+    <section class="panel">
+      <h3>Kontrol Operasional</h3>
+      <div class="row">
+        <input id="branch-name" placeholder="Nama cabang" />
+        <input id="branch-city" placeholder="Kota" />
+        <button id="btn-add-branch" class="btn-primary">Tambah Cabang (Rp2jt)</button>
+      </div>
+      <div class="row">
+        <select id="branch-select"></select>
+        <select id="product-select">
+          <option value="burger">Burger</option>
+          <option value="shirt">Baju</option>
+          <option value="software">Software Game</option>
+        </select>
+        <input id="set-price" type="number" placeholder="Harga jual" />
+        <button id="btn-set-price">Set Harga</button>
+      </div>
+      <div class="row">
+        <select id="material-select">
+          <option value="roti">Roti</option><option value="saos">Saos</option><option value="sosis">Sosis</option>
+          <option value="kain">Kain</option><option value="benang">Benang</option><option value="license">Lisensi</option>
+          <option value="cabe">Cabe</option>
+        </select>
+        <input id="material-qty" type="number" value="10" min="1" />
+        <button id="btn-buy-material">Beli Bahan</button>
+        <button id="btn-craft">Produksi Produk</button>
+      </div>
+      <div class="row">
+        <input id="promo-budget" type="number" placeholder="Budget promosi" />
+        <button id="btn-promo">Aktifkan Promosi</button>
+      </div>
+    </section>
 
-  <section class="panel">
-    <h3>Ledger / Riwayat Saldo</h3>
-    <div id="ledger"></div>
-  </section>
+    <section class="panel">
+      <h3>Transfer TradeSim ↔ TokoSim</h3>
+      <div class="row">
+        <input id="transfer-amount" type="number" placeholder="Jumlah" />
+        <button id="btn-from-trade">Ambil dari TradeSim</button>
+        <button id="btn-to-trade">Kirim ke TradeSim</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Cabang & Stok</h3>
+      <div id="branches"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Ledger / Riwayat Saldo</h3>
+      <div id="ledger"></div>
+    </section>
+  </main>
 
   <script type="module" src="./app.js"></script>
 </body>

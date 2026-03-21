@@ -81,7 +81,7 @@ function render(){
   $('#cash').textContent=fmt(state.cash); $('#revenue').textContent=fmt(state.revenueMonth);
   const profit=state.revenueMonth-state.expenseMonth-state.taxMonth; $('#profit').textContent=fmt(profit); $('#branches-count').textContent=state.branches.length;
   const sel=$('#branch-select'); sel.innerHTML=state.branches.map(b=>`<option value="${b.id}">${b.name} (${b.city})</option>`).join('');
-  $('#branches').innerHTML=state.branches.map(b=>`<div class="branch"><b>${b.name}</b> <span class="sub">${b.city}</span><div class="sub">Harga: 🍔${fmt(b.prices.burger)} | 👕${fmt(b.prices.shirt)} | 🕹️${fmt(b.prices.software)}</div><div class="sub">Stock: burger ${b.stock.burger}, baju ${b.stock.shirt}, software ${b.stock.software}</div><div class="sub">Bahan: roti ${b.mats.roti}, saos ${b.mats.saos}, sosis ${b.mats.sosis}, cabe ${b.mats.cabe}, kain ${b.mats.kain}, benang ${b.mats.benang}, license ${b.mats.license}</div></div>`).join('');
+  $('#branches').innerHTML=state.branches.map(b=>`<div class="branch"><b>${b.name}</b> <span class="sub">${b.city}</span><div class="sub">Harga: ${ico('burger')} ${fmt(b.prices.burger)} | ${ico('shirt')} ${fmt(b.prices.shirt)} | ${ico('software')} ${fmt(b.prices.software)}</div><div class="sub">Stok: burger ${b.stock.burger}, baju ${b.stock.shirt}, software ${b.stock.software}</div><div class="sub">Bahan: roti ${b.mats.roti}, saos ${b.mats.saos}, sosis ${b.mats.sosis}, cabe ${b.mats.cabe}, kain ${b.mats.kain}, benang ${b.mats.benang}, lisensi ${b.mats.license}</div></div>`).join('');
   $('#ledger').innerHTML=state.ledger.map(l=>`<div class="ledger-item"><span>${new Date(l.t).toLocaleTimeString('id-ID')} · ${l.desc}</span><span class="${l.amount>=0?'up':'down'}">${l.amount>=0?'+':''}${fmt(l.amount)}</span></div>`).join('');
 }
 
@@ -139,5 +139,12 @@ function transferTradeSim(toTrade){
 }
 
 function getBranch(){const id=$('#branch-select').value; return state.branches.find(b=>b.id===id)||state.branches[0];}
+
+function ico(type){
+  if(type==='burger') return '<svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" style="vertical-align:-2px"><path d="M3 8a7 7 0 0 1 14 0H3Zm0 2h14v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1Zm1 5h12a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2Z"/></svg>';
+  if(type==='shirt') return '<svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" style="vertical-align:-2px"><path d="m7 3 1.5 2h3L13 3l4 2-2 4-2-1v9H7V8L5 9 3 5l4-2Z"/></svg>';
+  return '<svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" style="vertical-align:-2px"><path d="M4 4h12v9H4V4Zm-1 11h14v2H3v-2Zm3-9v5l4-2.5L6 6Z"/></svg>';
+}
+
 function fmt(v){return 'Rp '+Math.round(v).toLocaleString('id-ID');}
 function $(s){return document.querySelector(s);}
