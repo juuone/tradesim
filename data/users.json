@@ -1,0 +1,43 @@
+{
+  "users": [
+    {
+      "id": "U001",
+      "username": "demo",
+      "password": "demo123",
+      "name": "Demo Trader",
+      "email": "demo@tradesim.id",
+      "avatar": "DT",
+      "role": "user",
+      "balance_idr": 100000000,
+      "balance_usd": 5000,
+      "joined": "2024-01-15",
+      "verified": true
+    },
+    {
+      "id": "U002",
+      "username": "sultan",
+      "password": "sultan888",
+      "name": "Sultan Maret",
+      "email": "sultan@tradesim.id",
+      "avatar": "SM",
+      "role": "user",
+      "balance_idr": 500000000,
+      "balance_usd": 25000,
+      "joined": "2023-11-01",
+      "verified": true
+    },
+    {
+      "id": "U003",
+      "username": "admin",
+      "password": "admin2024",
+      "name": "Admin TradeSim",
+      "email": "admin@tradesim.id",
+      "avatar": "AD",
+      "role": "admin",
+      "balance_idr": 1000000000,
+      "balance_usd": 50000,
+      "joined": "2023-01-01",
+      "verified": true
+    }
+  ]
+}

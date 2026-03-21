@@ -1,0 +1,569 @@
+{
+  "stocks": [
+    {
+      "symbol": "BBCA",
+      "name": "Bank Central Asia Tbk",
+      "sector": "Finance",
+      "basePrice": 9750,
+      "vol": "bluechip",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "TLKM",
+      "name": "Telkom Indonesia Tbk",
+      "sector": "Telecom",
+      "basePrice": 3680,
+      "vol": "stable",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "ASII",
+      "name": "Astra International Tbk",
+      "sector": "Automotive",
+      "basePrice": 5150,
+      "vol": "normal",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "BMRI",
+      "name": "Bank Mandiri Tbk",
+      "sector": "Finance",
+      "basePrice": 6800,
+      "vol": "normal",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "BBRI",
+      "name": "Bank Rakyat Indonesia Tbk",
+      "sector": "Finance",
+      "basePrice": 5100,
+      "vol": "normal",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "UNVR",
+      "name": "Unilever Indonesia Tbk",
+      "sector": "Consumer",
+      "basePrice": 2850,
+      "vol": "stable",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "HMSP",
+      "name": "HM Sampoerna Tbk",
+      "sector": "Consumer",
+      "basePrice": 1545,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "ICBP",
+      "name": "Indofood CBP Tbk",
+      "sector": "Food",
+      "basePrice": 11050,
+      "vol": "stable",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "GGRM",
+      "name": "Gudang Garam Tbk",
+      "sector": "Consumer",
+      "basePrice": 25400,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "INDF",
+      "name": "Indofood Sukses Makmur",
+      "sector": "Food",
+      "basePrice": 7250,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "SMGR",
+      "name": "Semen Indonesia Tbk",
+      "sector": "Industrial",
+      "basePrice": 5600,
+      "vol": "high",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "MNCN",
+      "name": "Media Nusantara Citra",
+      "sector": "Media",
+      "basePrice": 1120,
+      "vol": "high",
+      "liq": "thin",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "BBNI",
+      "name": "Bank Negara Indonesia Tbk",
+      "sector": "Finance",
+      "basePrice": 5200,
+      "vol": "normal",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "PTBA",
+      "name": "Bukit Asam Tbk",
+      "sector": "Mining",
+      "basePrice": 3580,
+      "vol": "high",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "ANTM",
+      "name": "Aneka Tambang Tbk",
+      "sector": "Mining",
+      "basePrice": 1870,
+      "vol": "high",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR"
+    }
+  ],
+  "syariah": [
+    {
+      "symbol": "AALI",
+      "name": "Astra Agro Lestari Tbk",
+      "sector": "Plantation",
+      "basePrice": 9600,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "CPIN",
+      "name": "Charoen Pokphand Indonesia",
+      "sector": "Food",
+      "basePrice": 5450,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "KLBF",
+      "name": "Kalbe Farma Tbk",
+      "sector": "Healthcare",
+      "basePrice": 1625,
+      "vol": "stable",
+      "liq": "medium",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "EXCL",
+      "name": "XL Axiata Tbk",
+      "sector": "Telecom",
+      "basePrice": 2350,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "WSKT",
+      "name": "Waskita Karya Tbk",
+      "sector": "Construction",
+      "basePrice": 490,
+      "vol": "high",
+      "liq": "thin",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "WIKA",
+      "name": "Wijaya Karya Tbk",
+      "sector": "Construction",
+      "basePrice": 710,
+      "vol": "high",
+      "liq": "thin",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "SIDO",
+      "name": "Industri Jamu & Farmasi Sido",
+      "sector": "Healthcare",
+      "basePrice": 790,
+      "vol": "stable",
+      "liq": "thin",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "SCMA",
+      "name": "Surya Citra Media Tbk",
+      "sector": "Media",
+      "basePrice": 320,
+      "vol": "high",
+      "liq": "thin",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "JPFA",
+      "name": "Japfa Comfeed Indonesia",
+      "sector": "Food",
+      "basePrice": 1540,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": true,
+      "currency": "IDR"
+    },
+    {
+      "symbol": "WOOD",
+      "name": "Integra Indocabinet Tbk",
+      "sector": "Manufacturing",
+      "basePrice": 450,
+      "vol": "high",
+      "liq": "thin",
+      "syariah": true,
+      "currency": "IDR"
+    }
+  ],
+  "crypto": [
+    {
+      "symbol": "BTC",
+      "name": "Bitcoin",
+      "sector": "Layer1",
+      "basePrice": 67500,
+      "vol": "normal",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "ETH",
+      "name": "Ethereum",
+      "sector": "Layer1",
+      "basePrice": 3480,
+      "vol": "high",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "BNB",
+      "name": "BNB",
+      "sector": "Exchange",
+      "basePrice": 595,
+      "vol": "normal",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "SOL",
+      "name": "Solana",
+      "sector": "Layer1",
+      "basePrice": 175,
+      "vol": "high",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "ADA",
+      "name": "Cardano",
+      "sector": "Layer1",
+      "basePrice": 0.62,
+      "vol": "high",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "XRP",
+      "name": "XRP",
+      "sector": "Payment",
+      "basePrice": 0.58,
+      "vol": "high",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "MATIC",
+      "name": "Polygon",
+      "sector": "Layer2",
+      "basePrice": 0.95,
+      "vol": "high",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "DOT",
+      "name": "Polkadot",
+      "sector": "Layer0",
+      "basePrice": 8.75,
+      "vol": "high",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "LINK",
+      "name": "Chainlink",
+      "sector": "Oracle",
+      "basePrice": 18.2,
+      "vol": "high",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "AVAX",
+      "name": "Avalanche",
+      "sector": "Layer1",
+      "basePrice": 38.5,
+      "vol": "extreme",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "UNI",
+      "name": "Uniswap",
+      "sector": "DeFi",
+      "basePrice": 11.3,
+      "vol": "extreme",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "ATOM",
+      "name": "Cosmos",
+      "sector": "Layer0",
+      "basePrice": 9.8,
+      "vol": "high",
+      "liq": "thin",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "LTC",
+      "name": "Litecoin",
+      "sector": "Payment",
+      "basePrice": 88.5,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "NEAR",
+      "name": "NEAR Protocol",
+      "sector": "Layer1",
+      "basePrice": 7.2,
+      "vol": "extreme",
+      "liq": "thin",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "ARB",
+      "name": "Arbitrum",
+      "sector": "Layer2",
+      "basePrice": 1.45,
+      "vol": "extreme",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "OP",
+      "name": "Optimism",
+      "sector": "Layer2",
+      "basePrice": 2.85,
+      "vol": "extreme",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "PEPE",
+      "name": "Pepe",
+      "sector": "Meme",
+      "basePrice": 1.38e-05,
+      "vol": "extreme",
+      "liq": "thin",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "DOGE",
+      "name": "Dogecoin",
+      "sector": "Meme",
+      "basePrice": 0.165,
+      "vol": "extreme",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "FTM",
+      "name": "Fantom",
+      "sector": "Layer1",
+      "basePrice": 0.95,
+      "vol": "extreme",
+      "liq": "thin",
+      "syariah": false,
+      "currency": "USD"
+    },
+    {
+      "symbol": "INJ",
+      "name": "Injective",
+      "sector": "DeFi",
+      "basePrice": 32.5,
+      "vol": "extreme",
+      "liq": "thin",
+      "syariah": false,
+      "currency": "USD"
+    }
+  ],
+  "ipo": [
+    {
+      "symbol": "NXTA",
+      "name": "Nexta Digital Indonesia Tbk",
+      "sector": "Technology",
+      "offerPrice": 1500,
+      "targetRaise": 500000000000,
+      "phase": "subscription",
+      "phaseEnd": "2025-04-15",
+      "syariah": false,
+      "currency": "IDR",
+      "description": "Platform e-commerce B2B terkemuka untuk UMKM Indonesia",
+      "subscribed": 72,
+      "allocations": []
+    },
+    {
+      "symbol": "GRNX",
+      "name": "Greenex Energy Tbk",
+      "sector": "Energy",
+      "offerPrice": 2200,
+      "targetRaise": 750000000000,
+      "phase": "listing",
+      "phaseEnd": "2025-04-10",
+      "syariah": true,
+      "currency": "IDR",
+      "description": "Perusahaan energi terbarukan fokus solar panel dan EV charging",
+      "subscribed": 215,
+      "allocations": []
+    }
+  ],
+  "newCrypto": [
+    {
+      "symbol": "ZETA",
+      "name": "ZetaChain",
+      "sector": "Layer1",
+      "offerPrice": 0.85,
+      "phase": "prelisting",
+      "phaseEnd": "2025-04-12",
+      "currency": "USD",
+      "description": "Universal L1 blockchain enabling native cross-chain dApps",
+      "subscribed": 45
+    },
+    {
+      "symbol": "EIGEN",
+      "name": "EigenLayer",
+      "sector": "Restaking",
+      "offerPrice": 3.5,
+      "phase": "subscription",
+      "phaseEnd": "2025-04-18",
+      "currency": "USD",
+      "description": "Restaking protocol for shared cryptoeconomic security",
+      "subscribed": 130
+    }
+  ],
+  "forex": [
+    {
+      "symbol": "USD/IDR",
+      "name": "US Dollar / Rupiah",
+      "sector": "Forex",
+      "basePrice": 15800,
+      "vol": "normal",
+      "liq": "thick",
+      "syariah": false,
+      "currency": "IDR",
+      "isForex": true
+    },
+    {
+      "symbol": "EUR/IDR",
+      "name": "Euro / Rupiah",
+      "sector": "Forex",
+      "basePrice": 17200,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR",
+      "isForex": true
+    },
+    {
+      "symbol": "GBP/IDR",
+      "name": "British Pound / Rupiah",
+      "sector": "Forex",
+      "basePrice": 19900,
+      "vol": "high",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR",
+      "isForex": true
+    },
+    {
+      "symbol": "XAU/IDR",
+      "name": "Emas (Gold Troy Oz) / IDR",
+      "sector": "Komoditas",
+      "basePrice": 29000000,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "IDR",
+      "isForex": true
+    },
+    {
+      "symbol": "XAU/USD",
+      "name": "Gold / US Dollar",
+      "sector": "Komoditas",
+      "basePrice": 1850,
+      "vol": "normal",
+      "liq": "medium",
+      "syariah": false,
+      "currency": "USD",
+      "isForex": true
+    }
+  ]
+}
