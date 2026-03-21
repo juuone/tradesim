@@ -177,7 +177,7 @@ function subscribe() {
     const active=State.get('activeAsset');
     updateTradeHeader(active); renderSidebarPrices(); updateDesktopPort(); updateSimTime();
     if(chart&&chartInited) chart.update();
-    if(currentPage==='home') renderHomePortfolio();
+    if(currentPage==='home'){ renderHomePortfolio(); renderHomeWatchlist(); renderHomeHoldings(); }
     if(currentPage==='market') renderMarketPrices();
     renderIHSGMiniChart();
     if(currentPage==='ihsg') renderIHSGPage();

@@ -261,7 +261,8 @@ function updatePrice(asset,simTime){
     imb=(bv-av)/(bv+av+1)*0.0002;
   }
   const orderPressure=getPendingOrderPressure(symbol);
-  const boundedMove=clamp(change+imb+orderPressure+crowd.pressure,-lim,lim);
+  const paceFactor=(!isForex&&currency==='IDR')?0.35:(isForex?0.55:1);
+  const boundedMove=clamp(change+imb+orderPressure+crowd.pressure,-lim,lim)*paceFactor;
   const target=Math.max(0.000001,ps.last*(1+boundedMove));
   refreshOrderBook(symbol,target,liq||'medium',dec);
   const ob2=State.get(`orderBooks.${symbol}`)||ob;
@@ -278,13 +279,14 @@ function updatePrice(asset,simTime){
   }
   const openP=ps.open>0?ps.open:newLast;
   const changePct=Math.max(-99,Math.min(99,round((newLast-openP)/openP*100,2)));
+  const volInc=getVolumeIncrement(asset,offSessionMode,crowd);
   State.set(`prices.${symbol}`,{...ps,last:newLast,
     bid:bestBid,ask:bestAsk,
     high:Math.max(ps.high,newLast),low:Math.min(ps.low,newLast),
     change:round(newLast-openP,dec),changePct,
-    volume:(ps.volume||0)+(offSessionMode?Math.floor(Math.random()*60):Math.floor(Math.random()*5000)+crowd.extraVolume),
+    volume:(ps.volume||0)+volInc,
   });
-  updateCandles(symbol,simTime,newLast,Math.floor(Math.random()*5000));
+  updateCandles(symbol,simTime,newLast,volInc);
 }
 
 function simulateParticipantPressure(asset,ps){
@@ -305,6 +307,18 @@ function simulateParticipantPressure(asset,ps){
   const baseVol=liq==='thick'?12000:liq==='thin'?1800:5000;
   const extraVolume=Math.max(0,Math.floor(baseVol*(Math.abs(pressure)*40+Math.random()*0.4)));
   return { pressure, extraVolume };
+}
+
+function getVolumeIncrement(asset,offSessionMode,crowd){
+  const liq=asset?.liq||'medium';
+  const isStock=asset?.currency==='IDR'&&!asset?.isForex&&!asset?.isCrypto;
+  if(offSessionMode) return Math.floor(Math.random()*8);
+  if(isStock){
+    const base=liq==='thick'?60:liq==='thin'?8:25;
+    return Math.max(1,Math.floor(base+Math.random()*base*2+Math.abs(crowd.pressure)*1500));
+  }
+  const base=liq==='thick'?220:liq==='thin'?25:90;
+  return Math.max(2,Math.floor(base+Math.random()*base*3+Math.abs(crowd.pressure)*4000));
 }
 
 function getPendingOrderPressure(symbol){
