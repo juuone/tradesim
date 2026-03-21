@@ -225,10 +225,11 @@ function updateIHSG(all){
 function updatePrice(asset,simTime){
   const{symbol,vol,liq,currency,isForex}=asset;
   const ps=State.get(`prices.${symbol}`); if(!ps) return;
-  const h=simTime.getHours(),dow=simTime.getDay(),min=simTime.getMinutes();
+  const { h,dow,min } = getWIBParts(simTime);
+  let offSessionMode=false;
   if(!isForex&&currency==='IDR'){
     if(dow===0||dow===6) return;
-    if(h<9||h>=16) return;
+    if(h<9||h>=16) offSessionMode=true;
     if(h===9&&min===0){
       State.set(`prices.${symbol}`,{...ps,open:ps.last,high:ps.last,low:ps.last,change:0,changePct:0});
       // Reset IHSG open too
@@ -245,12 +246,12 @@ function updatePrice(asset,simTime){
   }
   const{base,spike}=VOL[vol]||VOL.normal;
   const dec=decimals(ps.last,currency);
-  const vf=Math.random()<0.02?spike:base;
+  const vf=offSessionMode?base*0.2:(Math.random()<0.02?spike:base);
   const microTrend=((ps.last-(ps.open||ps.last))/(ps.open||ps.last))*-0.04;
   const gaussian=(randn()+randn()*0.35)*vf;
   const changeRaw=(gaussian*0.45)+microTrend;
   const lim=TICK_MOVE_LIMIT[vol]||0.008;
-  const change=clamp(changeRaw,-lim,lim);
+  const change=clamp(changeRaw,-lim,lim)*(offSessionMode?0.25:1);
   const crowd=simulateParticipantPressure(asset,ps);
   const ob=State.get(`orderBooks.${symbol}`);
   let imb=0;
@@ -281,7 +282,7 @@ function updatePrice(asset,simTime){
     bid:bestBid,ask:bestAsk,
     high:Math.max(ps.high,newLast),low:Math.min(ps.low,newLast),
     change:round(newLast-openP,dec),changePct,
-    volume:(ps.volume||0)+Math.floor(Math.random()*5000)+crowd.extraVolume,
+    volume:(ps.volume||0)+(offSessionMode?Math.floor(Math.random()*60):Math.floor(Math.random()*5000)+crowd.extraVolume),
   });
   updateCandles(symbol,simTime,newLast,Math.floor(Math.random()*5000));
 }
@@ -1157,6 +1158,11 @@ function tickSize(price,currency){
   if(price>=5000) return 5;
   if(price>=200) return 1;
   return 0.1;
+}
+function getWIBParts(dateObj){
+  const ts=dateObj.getTime()+7*60*60*1000; // WIB UTC+7
+  const d=new Date(ts);
+  return { h:d.getUTCHours(), min:d.getUTCMinutes(), dow:d.getUTCDay() };
 }
 function decimals(price,currency){
   if(!currency||currency==='IDR') return price>1000?0:1;
