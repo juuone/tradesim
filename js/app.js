@@ -1267,6 +1267,20 @@ function bindAll(){
     reader.onload=ev=>{const ok=State.importUserData(sess.userId,ev.target.result);if(ok){toast('Data diimpor!','success');setTimeout(()=>{renderPortfolio();renderWallet();updateDesktopPort();refreshHome();},500);}else toast('File tidak valid','error');};
     reader.readAsText(file);e.target.value='';
   });
+  $('btn-reset-data')?.addEventListener('click',()=>{
+    openConfirmModal({
+      title:'Reset Semua Data',
+      message:'Semua data TradeSim (global & user) akan dihapus dan aplikasi di-reload.',
+      confirmText:'Reset Sekarang',
+      danger:true,
+      onConfirm:()=>{
+        Object.keys(localStorage).forEach(k=>{
+          if(k==='tradesim_global'||k.startsWith('tradesim_user_')) localStorage.removeItem(k);
+        });
+        location.reload();
+      },
+    });
+  });
 }
 
 // ─── Globals ──────────────────────────────────────────────────

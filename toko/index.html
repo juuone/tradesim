@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TokoSim</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>🛍️ TokoSim</h1>
+    <div id="sim-time">-</div>
+  </header>
+
+  <section class="cards">
+    <div class="card"><label>Kas</label><b id="cash">Rp0</b></div>
+    <div class="card"><label>Omzet Bulan Ini</label><b id="revenue">Rp0</b></div>
+    <div class="card"><label>Laba Bersih</label><b id="profit">Rp0</b></div>
+    <div class="card"><label>Cabang</label><b id="branches-count">0</b></div>
+  </section>
+
+  <section class="panel">
+    <h3>Kontrol</h3>
+    <div class="row">
+      <input id="branch-name" placeholder="Nama cabang" />
+      <input id="branch-city" placeholder="Kota" />
+      <button id="btn-add-branch">+ Cabang (Rp2jt)</button>
+    </div>
+    <div class="row">
+      <select id="branch-select"></select>
+      <select id="product-select">
+        <option value="burger">Burger</option>
+        <option value="shirt">Baju</option>
+        <option value="software">Software Game</option>
+      </select>
+      <input id="set-price" type="number" placeholder="Harga jual" />
+      <button id="btn-set-price">Set Harga</button>
+    </div>
+    <div class="row">
+      <select id="material-select">
+        <option value="roti">Roti</option><option value="saos">Saos</option><option value="sosis">Sosis</option>
+        <option value="kain">Kain</option><option value="benang">Benang</option><option value="license">Lisensi</option>
+        <option value="cabe">Cabe</option>
+      </select>
+      <input id="material-qty" type="number" value="10" min="1" />
+      <button id="btn-buy-material">Beli Bahan</button>
+      <button id="btn-craft">Produksi Produk</button>
+    </div>
+    <div class="row">
+      <input id="promo-budget" type="number" placeholder="Budget promosi" />
+      <button id="btn-promo">Aktifkan Promosi</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>Transfer TradeSim ↔ Toko</h3>
+    <div class="row">
+      <input id="transfer-amount" type="number" placeholder="Jumlah" />
+      <button id="btn-from-trade">Ambil dari TradeSim</button>
+      <button id="btn-to-trade">Kirim ke TradeSim</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>Cabang & Stok</h3>
+    <div id="branches"></div>
+  </section>
+
+  <section class="panel">
+    <h3>Ledger / Riwayat Saldo</h3>
+    <div id="ledger"></div>
+  </section>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
