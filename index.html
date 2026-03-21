@@ -288,6 +288,12 @@
           <button id="btn-ihsg-halt" class="ctrl-big-btn red">⏸ Halt IHSG</button>
         </div>
         <div class="ctrl-section">
+          <div class="ctrl-title">📈 Market Activity</div>
+          <div class="form-row"><label>Target</label><select id="market-activity-target"><option value="all">All Market</option><option value="stocks">Saham</option><option value="crypto">Crypto</option><option value="forex">Forex/Emas</option></select></div>
+          <div class="form-row"><label>Intensity <span id="market-activity-value" class="mono">1.00x</span></label><input type="range" id="market-activity-slider" min="0.2" max="3" step="0.1" value="1"></div>
+          <button id="btn-apply-market-activity" class="ctrl-sm-btn">Terapkan</button>
+        </div>
+        <div class="ctrl-section">
           <div class="ctrl-title">⛔ Suspensi Aset</div>
           <div class="ctrl-input-row"><input type="text" id="suspend-sym-input" placeholder="Simbol (contoh: BBCA)" style="text-transform:uppercase"><button id="btn-suspend-asset" class="ctrl-sm-btn">Suspensi</button></div>
           <div id="ctrl-suspended-list" class="ctrl-list"></div>

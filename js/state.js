@@ -27,6 +27,7 @@ const State = (() => {
     newsEvents: [],
     customAssets: [],
     listedAssets: [], // assets that moved from IPO → trading
+    marketActivity: { all:1, stocks:1, crypto:1, forex:1 },
   };
 
   const _listeners = {};
@@ -90,6 +91,7 @@ const State = (() => {
         customAssets: _state.customAssets,
         listedAssets: _state.listedAssets,
         assets: _state.assets,
+        marketActivity: _state.marketActivity,
       };
       localStorage.setItem(GLOBAL_KEY, JSON.stringify(global));
 
@@ -123,6 +125,7 @@ const State = (() => {
       if (g.customAssets) _state.customAssets = g.customAssets;
       if (g.listedAssets) _state.listedAssets = g.listedAssets;
       if (g.assets)       _state.assets = g.assets;
+      if (g.marketActivity) _state.marketActivity = g.marketActivity;
       return true;
     } catch(e) { return false; }
   }

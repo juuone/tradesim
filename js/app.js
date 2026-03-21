@@ -47,7 +47,7 @@ function startApp(sess) {
   selectAssetSilent(State.get('activeAsset')||'BBCA');
   navigateTo('home'); startEngine(); subscribe();
   clearInterval(saveTimer);
-  saveTimer=setInterval(()=>State.saveToStorage(),5*60*1000);
+  saveTimer=setInterval(()=>State.saveToStorage(),60*1000);
 }
 
 function handleLogin(e) {
@@ -177,7 +177,7 @@ function subscribe() {
     const active=State.get('activeAsset');
     updateTradeHeader(active); renderSidebarPrices(); updateDesktopPort(); updateSimTime();
     if(chart&&chartInited) chart.update();
-    if(currentPage==='home'){ renderHomePortfolio(); renderHomeWatchlist(); renderHomeHoldings(); }
+    if(currentPage==='home') refreshHome();
     if(currentPage==='market') renderMarketPrices();
     renderIHSGMiniChart();
     if(currentPage==='ihsg') renderIHSGPage();
@@ -1016,6 +1016,7 @@ function renderIPOPage(){
 function renderControlPanel(){
   const suspended=State.get('suspendedAssets')||{};
   const ihsgHalted=State.get('ihsgHalted')||false;
+  const marketAct=State.get('marketActivity')||{all:1,stocks:1,crypto:1,forex:1};
 
   const sl=$('ctrl-suspended-list');
   if(sl){
@@ -1028,6 +1029,14 @@ function renderControlPanel(){
   const haltBtn=$('btn-ihsg-halt');
   if(haltBtn){haltBtn.textContent=ihsgHalted?'▶ Resume IHSG':'⏸ Halt IHSG';haltBtn.className=`ctrl-big-btn ${ihsgHalted?'green':'red'}`;}
   setEl('ihsg-halt-status',ihsgHalted?`🔴 IHSG DIHENTIKAN: ${State.get('ihsgHaltReason')||''}` :'🟢 IHSG Normal');
+  const targetSel=$('market-activity-target');
+  const slider=$('market-activity-slider');
+  const valLbl=$('market-activity-value');
+  if(targetSel&&slider&&valLbl){
+    const key=targetSel.value||'all';
+    slider.value=String(marketAct[key]??1);
+    valLbl.textContent=`${parseFloat(slider.value).toFixed(2)}x`;
+  }
 
   const sess=State.get('session');
   const rugList=$('ctrl-rugpull-list');
@@ -1222,6 +1231,26 @@ function bindAll(){
     renderIPOPage();renderSidebar();renderMarketLists();
   });
   $('btn-create-crypto')?.addEventListener('click',createCryptoUI);
+  $('market-activity-slider')?.addEventListener('input',e=>{
+    const v=parseFloat(e.target.value)||1;
+    setEl('market-activity-value',`${v.toFixed(2)}x`);
+  });
+  $('market-activity-target')?.addEventListener('change',()=>{
+    const cfg=State.get('marketActivity')||{all:1,stocks:1,crypto:1,forex:1};
+    const key=$('market-activity-target')?.value||'all';
+    const v=parseFloat(cfg[key]??1);
+    const s=$('market-activity-slider'); if(s) s.value=String(v);
+    setEl('market-activity-value',`${v.toFixed(2)}x`);
+  });
+  $('btn-apply-market-activity')?.addEventListener('click',()=>{
+    const key=$('market-activity-target')?.value||'all';
+    const v=parseFloat($('market-activity-slider')?.value)||1;
+    const cfg=State.get('marketActivity')||{all:1,stocks:1,crypto:1,forex:1};
+    cfg[key]=Math.max(0.2,Math.min(3,v));
+    State.set('marketActivity',cfg);
+    toast(`Market activity ${key.toUpperCase()} diset ke ${cfg[key].toFixed(2)}x`,'success');
+    State.saveToStorage();
+  });
   $('btn-ihsg-halt')?.addEventListener('click',()=>State.get('ihsgHalted')?window.resumeIHSGUI():window.haltIHSGUI());
   $('btn-suspend-asset')?.addEventListener('click',()=>{const sym=$('suspend-sym-input')?.value?.toUpperCase().trim();if(sym)window.suspendAssetUI(sym);});
   $('btn-export-data')?.addEventListener('click',()=>{

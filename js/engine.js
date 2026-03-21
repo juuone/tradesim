@@ -181,7 +181,7 @@ export function tick(){
   updateIHSG(all);
   checkIPOAutoListing();
 
-  if(nt.getMinutes()%5===0) State.saveToStorage();
+  State.saveToStorage();
   State.emit('tick',nt);
 }
 
@@ -262,7 +262,8 @@ function updatePrice(asset,simTime){
   }
   const orderPressure=getPendingOrderPressure(symbol);
   const paceFactor=(!isForex&&currency==='IDR')?0.35:(isForex?0.55:1);
-  const boundedMove=clamp(change+imb+orderPressure+crowd.pressure,-lim,lim)*paceFactor;
+  const activityMult=getMarketActivityMultiplier(asset);
+  const boundedMove=clamp(change+imb+orderPressure+crowd.pressure,-lim,lim)*paceFactor*activityMult;
   const target=Math.max(0.000001,ps.last*(1+boundedMove));
   refreshOrderBook(symbol,target,liq||'medium',dec);
   const ob2=State.get(`orderBooks.${symbol}`)||ob;
@@ -279,7 +280,7 @@ function updatePrice(asset,simTime){
   }
   const openP=ps.open>0?ps.open:newLast;
   const changePct=Math.max(-99,Math.min(99,round((newLast-openP)/openP*100,2)));
-  const volInc=getVolumeIncrement(asset,offSessionMode,crowd);
+  const volInc=getVolumeIncrement(asset,offSessionMode,crowd,activityMult);
   State.set(`prices.${symbol}`,{...ps,last:newLast,
     bid:bestBid,ask:bestAsk,
     high:Math.max(ps.high,newLast),low:Math.min(ps.low,newLast),
@@ -309,16 +310,16 @@ function simulateParticipantPressure(asset,ps){
   return { pressure, extraVolume };
 }
 
-function getVolumeIncrement(asset,offSessionMode,crowd){
+function getVolumeIncrement(asset,offSessionMode,crowd,activityMult=1){
   const liq=asset?.liq||'medium';
   const isStock=asset?.currency==='IDR'&&!asset?.isForex&&!asset?.isCrypto;
-  if(offSessionMode) return Math.floor(Math.random()*8);
+  if(offSessionMode) return Math.floor(Math.random()*8*activityMult);
   if(isStock){
     const base=liq==='thick'?60:liq==='thin'?8:25;
-    return Math.max(1,Math.floor(base+Math.random()*base*2+Math.abs(crowd.pressure)*1500));
+    return Math.max(1,Math.floor((base+Math.random()*base*2+Math.abs(crowd.pressure)*1500)*activityMult));
   }
   const base=liq==='thick'?220:liq==='thin'?25:90;
-  return Math.max(2,Math.floor(base+Math.random()*base*3+Math.abs(crowd.pressure)*4000));
+  return Math.max(2,Math.floor((base+Math.random()*base*3+Math.abs(crowd.pressure)*4000)*activityMult));
 }
 
 function getPendingOrderPressure(symbol){
@@ -1166,6 +1167,15 @@ function estimateFreeFloatShares(asset){
 function isTradableAsset(asset){
   if(!asset) return false;
   return !asset.phase || asset.phase==='listed';
+}
+function getMarketActivityMultiplier(asset){
+  const cfg=State.get('marketActivity')||{all:1,stocks:1,crypto:1,forex:1};
+  let key='all';
+  if(asset?.isForex) key='forex';
+  else if(asset?.isCrypto||asset?.currency==='USD') key='crypto';
+  else if(asset?.currency==='IDR') key='stocks';
+  const all=cfg.all??1, specific=cfg[key]??1;
+  return Math.max(0.2,Math.min(3,all*specific));
 }
 function tickSize(price,currency){
   if(currency&&currency!=='IDR') return price>100?0.01:price>1?0.001:0.000001;
