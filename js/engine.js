@@ -163,6 +163,7 @@ export function tick(){
   applyAUMImpact();
   processAllPendingOrders();
   checkDividendCumDate(nt);
+  processMonthlyDividends(nt);
   updateIHSG(all);
   checkIPOAutoListing();
 
@@ -396,6 +397,37 @@ function checkDividendCumDate(simTime){
   });
 }
 
+function processMonthlyDividends(simTime){
+  if(simTime.getDate()!==1||simTime.getHours()<9) return;
+  const monthKey=`${simTime.getFullYear()}-${String(simTime.getMonth()+1).padStart(2,'0')}`;
+  if(State.get('lastDividendSweep')===monthKey) return;
+  State.set('lastDividendSweep',monthKey);
+
+  const portfolios=State.get('portfolio')||{};
+  Object.entries(portfolios).forEach(([userId,port])=>{
+    Object.entries(port.holdings||{}).forEach(([symbol,holding])=>{
+      const divInfo=DIVIDEND_STOCKS[symbol]; if(!divInfo) return;
+      const ps=State.get(`prices.${symbol}`); if(!ps) return;
+      const monthlyDivPerShare=round((ps.last*divInfo.yieldPct)/12,0);
+      const totalDiv=monthlyDivPerShare*holding.qty;
+      if(totalDiv<=0) return;
+      const periodKey=`${symbol}_${monthKey}_monthly`;
+      const divs=State.get(`dividends.${userId}`)||[];
+      if(divs.find(d=>d.periodKey===periodKey)) return;
+      const divRecord={
+        id:'DIV'+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,4).toUpperCase(),
+        userId,symbol,qty:holding.qty,divPerShare:monthlyDivPerShare,totalAmount:totalDiv,
+        currency:'IDR',cumDate:simTime.toISOString(),
+        payDate:new Date(simTime.getTime()+3*86400000).toISOString(),
+        yieldPct:divInfo.yieldPct,claimed:false,type:'dividend',
+        note:'Dividen bulanan simulasi',periodKey,
+      };
+      State.set(`dividends.${userId}`,[divRecord,...divs].slice(0,200));
+      State.emit('dividend.available',divRecord);
+    });
+  });
+}
+
 // Also track past holders for dividend (snapshot at cum-date)
 // This is called after SELL transaction to record "held at cum-date" history
 export function recordDividendEligibility(userId, symbol, qtyHeld, simTime){
@@ -441,6 +473,8 @@ export function claimDividend(userId, divId){
   port.totalDividends=(port.totalDividends||0)+divs[idx].totalAmount;
   State.set(`portfolio.${userId}`,{...port});
   State.set(`dividends.${userId}`,[...divs]);
+  recordTx(userId,{type:'dividend_claim',symbol:divs[idx].symbol,qty:divs[idx].qty,
+    price:divs[idx].divPerShare,amount:divs[idx].totalAmount,fee:0,orderId:divs[idx].id,currency:'IDR'});
   State.emit(`portfolio.${userId}`,State.get(`portfolio.${userId}`));
   return{ok:true,amount:divs[idx].totalAmount};
 }
@@ -448,9 +482,10 @@ export function claimDividend(userId, divId){
 export function claimAllDividends(userId){
   const divs=State.get(`dividends.${userId}`)||[];
   let total=0;
+  let claimedCount=0;
   const updated=divs.map(d=>{
     if(d.claimed) return d;
-    total+=d.totalAmount; return{...d,claimed:true,claimedAt:new Date().toISOString()};
+    total+=d.totalAmount; claimedCount++; return{...d,claimed:true,claimedAt:new Date().toISOString()};
   });
   if(total<=0) return{ok:false,error:'Tidak ada dividen yang bisa diclaim'};
   State.set(`dividends.${userId}`,updated);
@@ -458,6 +493,8 @@ export function claimAllDividends(userId){
   port.cash_idr=(port.cash_idr||0)+total;
   port.totalDividends=(port.totalDividends||0)+total;
   State.set(`portfolio.${userId}`,{...port});
+  recordTx(userId,{type:'dividend_claim_all',symbol:'DIV',qty:claimedCount,
+    price:0,amount:total,fee:0,orderId:'DIVALL'+Date.now().toString(36).toUpperCase(),currency:'IDR'});
   State.emit(`portfolio.${userId}`,State.get(`portfolio.${userId}`));
   return{ok:true,total};
 }
@@ -484,6 +521,8 @@ export function subscribeToIPO(userId, symbol, requestedLots){
   if(!subs[userId]) subs[userId]={};
   subs[userId][symbol]={qty:requestedLots,cost,offerPrice:ipo.offerPrice,status:'pending'};
   State.set('ipoSubscriptions',subs);
+  recordTx(userId,{type:'ipo_subscribe',symbol,qty:requestedLots,price:ipo.offerPrice,
+    amount:cost,fee:0,orderId:'IPO'+Date.now().toString(36).toUpperCase(),currency:'IDR'});
   ipo.subscribed=(ipo.subscribed||0)+1;
   State.set('assets',{...a});
   State.saveToStorage();
@@ -729,6 +768,9 @@ export function skipSimTime(minutes){
       const ct=new Date(t.getTime()+m*30*24*60*60*1000);
       ct.setDate(14); ct.setHours(15,0,0,0);
       checkDividendCumDate(ct);
+      const mt=new Date(t.getTime()+m*30*24*60*60*1000);
+      mt.setDate(1); mt.setHours(9,0,0,0);
+      processMonthlyDividends(mt);
     }
   }
   State.saveToStorage(); State.emit('tick',nt);

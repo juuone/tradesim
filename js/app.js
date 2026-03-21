@@ -627,14 +627,15 @@ window.setQtyPct=(prefix,pct)=>{
   const sym=State.get('activeAsset'),ps=State.get(`prices.${sym}`);if(!ps)return;
   const side=document.querySelector('.order-side-btn.active')?.dataset.side||'buy';
   const fxR=ps.currency==='IDR'?1:getForexRate('USD/IDR');
-  const priceInput=$(prefix+'-order-price');
+  const pfx=prefix.endsWith('-')?prefix.slice(0,-1):prefix;
+  const priceInput=$(pfx+'-order-price');
   const usePrice=parseFloat(priceInput?.value)||ps.last;
   let maxQty=0;
   if(side==='buy'){const balIDR=port.cash_idr||0;if(balIDR<=0){toast('Saldo tidak cukup','error');return;}maxQty=Math.floor(balIDR/(usePrice*fxR*(1+FEE_BUY)));}
   else{maxQty=port.holdings?.[sym]?.qty||0;}
   if(maxQty<=0){toast(side==='buy'?'Saldo tidak cukup':'Tidak ada kepemilikan','error');return;}
   const qty=Math.max(1,Math.floor(maxQty*pct/100));
-  const qtyInput=$(prefix+'-order-qty');
+  const qtyInput=$(pfx+'-order-qty');
   if(qtyInput){qtyInput.value=qty;qtyInput.style.borderColor='var(--blue)';qtyInput.style.boxShadow='0 0 0 2px rgba(26,111,255,.2)';setTimeout(()=>{qtyInput.style.borderColor='';qtyInput.style.boxShadow='';},600);updateOrderTotals();}
 };
 
@@ -774,7 +775,11 @@ function renderPortfolio() {
         <div><div class="phl-pnl-v ${pnl>=0?'up':'down'}">${pnl>=0?'+':''}${fmtM(pnl,'IDR')}</div><div class="phl-pnl-p ${pnl>=0?'up':'down'}">${pct>=0?'+':''}${pct.toFixed(2)}%</div></div></div>
       <div class="phl-stats"><div class="phl-stat"><label>Qty</label><span>${hld.qty.toLocaleString()}</span></div><div class="phl-stat"><label>Avg</label><span>${fmtP(hld.avgCost,cur)}</span></div><div class="phl-stat"><label>Last</label><span>${fmtP(last,cur)}</span></div></div>
       ${divInfo?`<div class="phl-div-hint">Dividen yield ${(divInfo.yieldPct*100).toFixed(1)}%/thn · est. ${fmtM(round(last*divInfo.yieldPct*hld.qty*fx,0),'IDR')}</div>`:''}
-      <div class="phl-actions"><button class="btn-sell-q" onclick="event.stopPropagation();window.quickSell('${sym}',${hld.qty})">Jual Semua</button><button class="btn-chart-q" onclick="event.stopPropagation();window.selectAssetUI('${sym}')">Chart</button></div></div>`;
+      <div class="phl-actions">
+        <button class="btn-sell-q" onclick="event.stopPropagation();window.quickSell('${sym}',${hld.qty})">Jual Semua</button>
+        ${a?.custom&&a?.isCrypto?`<button class="btn-sell-q" style="background:rgba(240,64,64,.12);border-color:rgba(240,64,64,.35);color:var(--dn)" onclick="event.stopPropagation();window.rugPullUI('${sym}')">Rugpull</button>`:''}
+        <button class="btn-chart-q" onclick="event.stopPropagation();window.selectAssetUI('${sym}')">Chart</button>
+      </div></div>`;
   }).join('');
 
   // Open Orders
@@ -838,10 +843,36 @@ function renderWallet() {
     </div>`).join('');
 
   const deps=(State.get(`deposits.${sess.userId}`)||[]).slice(0,40);
+  const txs=(State.get(`transactions.${sess.userId}`)||[]).slice(0,80);
   const el=$('wallet-history');if(!el)return;
-  el.innerHTML=!deps.length?'<div class="empty-msg">Belum ada riwayat</div>':deps.map(d=>{
-    const amt=walletCur==='IDR'?(d.amountIDR||d.amount):((d.amountIDR||d.amount)/fxR);
-    return `<div class="wh-item ${d.type==='withdraw'?'wd':'dep'}"><div class="wh-top"><div class="wh-type ${d.type==='withdraw'?'down':'up'}">${d.type==='withdraw'?'Withdraw':'Deposit'}</div><div class="wh-amount">${fmtM(amt,walletCur)}</div></div><div class="wh-detail">${d.method} · <span class="badge badge-${d.status}">${d.status}</span>${d.adminNote?' · '+d.adminNote:''}</div><div class="wh-time">${new Date(d.createdAt).toLocaleString('id-ID')}</div></div>`;
+  const cashEvents=[
+    ...deps.map(d=>({
+      t:new Date(d.createdAt).getTime(),
+      cls:d.type==='withdraw'?'wd':'dep',
+      type:d.type==='withdraw'?'Withdraw':'Deposit',
+      up:d.type!=='withdraw',
+      amountIDR:d.amountIDR||d.amount||0,
+      detail:`${d.method} · ${d.status}${d.adminNote?' · '+d.adminNote:''}`,
+      when:d.createdAt,
+    })),
+    ...txs.filter(tx=>['buy','sell','ipo_subscribe','dividend_claim','dividend_claim_all'].includes(tx.type)).map(tx=>{
+      const buyLike=['buy','ipo_subscribe'].includes(tx.type);
+      const inLike=['sell','dividend_claim','dividend_claim_all'].includes(tx.type);
+      const sign=inLike?1:-1;
+      return {
+        t:new Date(tx.timestamp).getTime(),
+        cls:buyLike?'wd':'dep',
+        type:tx.type==='ipo_subscribe'?'IPO Subscribe':tx.type==='dividend_claim'?'Claim Dividen':tx.type==='dividend_claim_all'?'Claim Semua Dividen':tx.type.toUpperCase(),
+        up:sign>0,
+        amountIDR:(tx.amount||0)*sign,
+        detail:`${tx.symbol||'-'} · Qty ${(tx.qty||0).toLocaleString()} · ${fmtP(tx.price,tx.currency)}`,
+        when:tx.timestamp,
+      };
+    }),
+  ].sort((a,b)=>b.t-a.t).slice(0,80);
+  el.innerHTML=!cashEvents.length?'<div class="empty-msg">Belum ada riwayat</div>':cashEvents.map(ev=>{
+    const amt=walletCur==='IDR'?ev.amountIDR:(ev.amountIDR/fxR);
+    return `<div class="wh-item ${ev.cls}"><div class="wh-top"><div class="wh-type ${ev.up?'up':'down'}">${ev.type}</div><div class="wh-amount">${ev.up?'+':''}${fmtM(amt,walletCur)}</div></div><div class="wh-detail">${ev.detail}</div><div class="wh-time">${new Date(ev.when).toLocaleString('id-ID')}</div></div>`;
   }).join('');
 }
 
@@ -993,6 +1024,23 @@ function renderControlPanel(){
   const haltBtn=$('btn-ihsg-halt');
   if(haltBtn){haltBtn.textContent=ihsgHalted?'▶ Resume IHSG':'⏸ Halt IHSG';haltBtn.className=`ctrl-big-btn ${ihsgHalted?'green':'red'}`;}
   setEl('ihsg-halt-status',ihsgHalted?`🔴 IHSG DIHENTIKAN: ${State.get('ihsgHaltReason')||''}` :'🟢 IHSG Normal');
+
+  const sess=State.get('session');
+  const rugList=$('ctrl-rugpull-list');
+  if(rugList&&sess){
+    const port=State.get(`portfolio.${sess.userId}`)||{};
+    const candidates=Object.entries(port.holdings||{}).filter(([sym,h])=>{
+      if(!h||h.qty<=0) return false;
+      const asset=allAssets().find(a=>a.symbol===sym);
+      return !!asset?.custom&&!!asset?.isCrypto;
+    });
+    rugList.innerHTML=!candidates.length
+      ?'<div class="empty-msg">Belum ada custom crypto yang bisa dirugpull</div>'
+      :candidates.map(([sym,h])=>`<div class="ctrl-item">
+          <div><div class="ctrl-sym">${sym}</div><div class="ctrl-reason">${h.qty.toLocaleString()} coin tersedia</div></div>
+          <button class="ctrl-big-btn red" style="height:34px;padding:0 10px;font-size:11px" onclick="window.rugPullUI('${sym}')">Rugpull</button>
+        </div>`).join('');
+  }
 }
 
 window.suspendAssetUI=(sym)=>{

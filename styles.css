@@ -38,7 +38,7 @@ a{color:var(--blue);text-decoration:none}
 .demo-chips{display:flex;flex-wrap:wrap;gap:6px}.demo-chips button{font-size:11px;font-family:var(--mono);background:var(--bg2);border:1px solid var(--border);padding:5px 11px;border-radius:20px;cursor:pointer;color:var(--t2);transition:all .15s}.demo-chips button:hover{border-color:var(--blue);color:var(--blue)}
 
 /* ── App Shell ──────────────────────────────────────────────── */
-#app-screen{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden}
+#app-screen{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;padding-top:env(safe-area-inset-top);background:var(--bg0)}
 .topnav{height:var(--nav-h);background:var(--bg1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 10px;flex-shrink:0;z-index:300;gap:6px}
 .tnl{display:flex;align-items:center;gap:0;min-width:0;flex:1;overflow:hidden}
 .tnr{display:flex;align-items:center;gap:8px;flex-shrink:0}
