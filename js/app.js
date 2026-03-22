@@ -270,14 +270,33 @@ function renderSidebarPrices() {
 }
 
 // ─── IHSG Display ─────────────────────────────────────────────
+
+function getIHSGMarketStatus(){
+  if(State.get('ihsgHalted')) return {code:'halt',label:'🔴 HALT',badge:'HALT'};
+  const t=State.get('simTime');
+  if(!t) return {code:'normal',label:'🟢 Normal',badge:''};
+  const ts=t.getTime()+7*60*60*1000; // WIB
+  const d=new Date(ts);
+  const dow=d.getUTCDay();
+  const h=d.getUTCHours();
+  if(dow===0||dow===6) return {code:'weekend',label:'🟡 Market Tutup Hari Libur',badge:'TUTUP'};
+  if(h<9||h>=16) return {code:'offhours',label:'🟡 Market Tutup di luar jam market (09:00-16:00 WIB)',badge:'TUTUP'};
+  return {code:'normal',label:'🟢 Normal',badge:''};
+}
+
 function updateIHSGDisplay() {
   const ihsg=State.get('ihsg'); if(!ihsg) return;
   const up=ihsg.changePct>=0;
   setEl('ihsg-value',ihsg.value?.toLocaleString('id-ID',{maximumFractionDigits:2})||'-');
   const chgEl=$('ihsg-chg');
   if(chgEl){chgEl.textContent=`${up?'+':''}${ihsg.changePct?.toFixed(2)}%`;chgEl.className=`ihsg-chg ${up?'up':'down'}`;}
+  const status=getIHSGMarketStatus();
   const haltEl=$('ihsg-halt-badge');
-  if(haltEl) haltEl.style.display=State.get('ihsgHalted')?'':'none';
+  if(haltEl){
+    haltEl.style.display=status.badge?'':'none';
+    haltEl.textContent=status.badge||'HALT';
+    haltEl.title=status.label;
+  }
   // Topnav IHSG values
   setEl('ihsg-value', ihsg.value?.toLocaleString('id-ID',{maximumFractionDigits:2})||'-');
   const chgNav=$('ihsg-chg');
@@ -410,8 +429,8 @@ function renderIHSGPage() {
   setEl('ihsg-adv',adv+'');
   setEl('ihsg-dec',dec+'');
   setEl('ihsg-unch',unch+'');
-  const halted=State.get('ihsgHalted')||false;
-  setEl('ihsg-status-txt',halted?'🔴 HALT':'🟢 Normal');
+  const status=getIHSGMarketStatus();
+  setEl('ihsg-status-txt',status.label);
 
   // Top movers
   movers.sort((a,b)=>Math.abs(b.changePct)-Math.abs(a.changePct));

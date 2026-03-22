@@ -228,7 +228,8 @@ function updatePrice(asset,simTime){
   const { h,dow,min } = getWIBParts(simTime);
   let offSessionMode=false;
   if(!isForex&&currency==='IDR'){
-    if(dow===0||dow===6||h<9||h>=16) offSessionMode=true;
+    if(dow===0||dow===6) return;
+    if(h<9||h>=16) offSessionMode=true;
     if(h===9&&min===0){
       State.set(`prices.${symbol}`,{...ps,open:ps.last,high:ps.last,low:ps.last,change:0,changePct:0});
       // Reset IHSG open too
@@ -237,7 +238,7 @@ function updatePrice(asset,simTime){
       return;
     }
   } else if(isForex){
-    if(dow===0||dow===6) offSessionMode=true;
+    if(dow===0||dow===6) return;
     if(h===0&&min===0){State.set(`prices.${symbol}`,{...ps,open:ps.last,high:ps.last,low:ps.last,change:0,changePct:0});return;}
   } else {
     // crypto 24/7
