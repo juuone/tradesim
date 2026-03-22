@@ -17,6 +17,9 @@ export const FEE_BUY  = 0.0015;
 export const FEE_SELL = 0.0025;
 const TICK_MS = 1000;
 const FX_BASE = { 'USD/IDR':15800,'EUR/IDR':17200,'GBP/IDR':19900,'XAU/IDR':30000000,'XAU/USD':1900 };
+const TICK_MOVE_LIMIT = {
+  bluechip:0.0035, stable:0.005, normal:0.008, high:0.014, extreme:0.03,
+};
 
 // Saham IDX yang bayar dividen (dunia nyata: harus pernah pegang saat cum-date)
 export const DIVIDEND_STOCKS = {
@@ -53,7 +56,7 @@ export function initMarket(assetsData) {
   const fxAssets=makeFxAssets();
   const cur=State.get('assets')||{};
   if (!cur.forex) { cur.forex=fxAssets; State.set('assets',{...cur}); }
-  [...all,...fxAssets,...(State.get('listedAssets')||[]),...(State.get('customAssets')||[])].forEach(a=>{
+  [...all,...fxAssets,...(State.get('listedAssets')||[]),...(State.get('customAssets')||[]).filter(isTradableAsset)].forEach(a=>{
     if (!State.get(`prices.${a.symbol}`)) initPrice(a);
     if (!State.get(`candles.${a.symbol}`)) initCandles(a.symbol,a.basePrice,a.vol||'normal');
     if (!State.get(`tradeTapes.${a.symbol}`)) State.set(`tradeTapes.${a.symbol}`,[]);
@@ -70,7 +73,8 @@ function makeFxAssets(){
   ];
 }
 
-function initPrice(a){
+function initPrice(a,opts={}){
+  const { freshBook=false } = opts;
   const dec=decimals(a.basePrice,a.currency);
   State.set(`prices.${a.symbol}`,{
     symbol:a.symbol,name:a.name,sector:a.sector||'',syariah:!!a.syariah,
@@ -79,20 +83,33 @@ function initPrice(a){
     bid:round(a.basePrice*0.999,dec),ask:round(a.basePrice*1.001,dec),
     volume:0,change:0,changePct:0,
   });
-  buildOrderBook(a.symbol,a.basePrice,a.liq||'medium');
+  buildOrderBook(a.symbol,a.basePrice,a.liq||'medium',freshBook);
 }
 
-export function buildOrderBook(symbol,mid,liqProfile){
+export function buildOrderBook(symbol,mid,liqProfile,isFresh=false){
   const{levels,baseSize,spread}=LIQ[liqProfile]||LIQ.medium;
+  const depth=isFresh?Math.max(2,Math.floor(levels*0.3)):levels;
+  const sizeMult=isFresh?0.08:1;
   const dec=mid<10?6:mid<1000?2:0;
   const bids=[],asks=[];
-  for(let i=1;i<=levels;i++){
+  for(let i=1;i<=depth;i++){
     const sf=spread*i,n=1+(Math.random()-.5)*.5,d=1/(1+i*.3);
-    bids.push({price:round(mid*(1-sf),dec),qty:Math.floor(baseSize*n*d)});
-    asks.push({price:round(mid*(1+sf),dec),qty:Math.floor(baseSize*n*d)});
+    bids.push({price:round(mid*(1-sf),dec),qty:Math.max(50,Math.floor(baseSize*sizeMult*n*d))});
+    asks.push({price:round(mid*(1+sf),dec),qty:Math.max(50,Math.floor(baseSize*sizeMult*n*d))});
   }
   bids.sort((a,b)=>b.price-a.price); asks.sort((a,b)=>a.price-b.price);
   State.set(`orderBooks.${symbol}`,{bids,asks});
+}
+
+function initFreshCandles(symbol,basePrice,simTime){
+  const now=(simTime||State.get('simTime')||new Date()).getTime();
+  const tfMs={ '1m':60e3,'5m':300e3,'15m':900e3,'1h':3.6e6,'4h':14.4e6,'1d':86.4e6 };
+  const seed={};
+  Object.entries(tfMs).forEach(([tf,ms])=>{
+    const t=Math.floor(now/ms)*ms;
+    seed[tf]=[{ t, o:basePrice, h:basePrice, l:basePrice, c:basePrice, v:0 }];
+  });
+  State.set(`candles.${symbol}`,seed);
 }
 
 function initCandles(symbol,base,volProfile){
@@ -147,7 +164,7 @@ export function tick(){
   const a=State.get('assets')||{};
   const all=[
     ...(a.stocks||[]),...(a.syariah||[]),...(a.crypto||[]),
-    ...(a.forex||[]),...(State.get('listedAssets')||[]),...(State.get('customAssets')||[]),
+    ...(a.forex||[]),...(State.get('listedAssets')||[]),...(State.get('customAssets')||[]).filter(isTradableAsset),
   ];
 
   all.forEach(asset=>{
@@ -160,10 +177,11 @@ export function tick(){
   applyAUMImpact();
   processAllPendingOrders();
   checkDividendCumDate(nt);
+  processMonthlyDividends(nt);
   updateIHSG(all);
   checkIPOAutoListing();
 
-  if(nt.getMinutes()%5===0) State.saveToStorage();
+  State.saveToStorage();
   State.emit('tick',nt);
 }
 
@@ -172,16 +190,16 @@ function updateIHSG(all){
   const stocks=all.filter(a=>a.currency==='IDR'&&!a.isForex&&!a.isCrypto);
   if(!stocks.length) return;
 
-  // IHSG = Laspeyres price-weighted index
-  // Base period: use basePrice as base. Index = 6000 * (Σ currentPrice) / (Σ basePrice)
-  // This mirrors how real IHSG tracks aggregate price movement
+  // IHSG approximation: free-float market cap weighted index
+  // Index = 6000 * (Σ (price * freeFloatShares)) / (Σ (basePrice * freeFloatShares))
   let sumCurrent=0, sumBase=0, count=0;
   stocks.forEach(a=>{
     const p=State.get(`prices.${a.symbol}`); if(!p) return;
     const base=a.basePrice||p.open||p.last;
     if(!base||base<=0) return;
-    sumCurrent+=p.last;
-    sumBase+=base;
+    const ffShares=estimateFreeFloatShares(a);
+    sumCurrent+=p.last*ffShares;
+    sumBase+=base*ffShares;
     count++;
   });
   if(!count||!sumBase) return;
@@ -207,10 +225,11 @@ function updateIHSG(all){
 function updatePrice(asset,simTime){
   const{symbol,vol,liq,currency,isForex}=asset;
   const ps=State.get(`prices.${symbol}`); if(!ps) return;
-  const h=simTime.getHours(),dow=simTime.getDay(),min=simTime.getMinutes();
+  const { h,dow,min } = getWIBParts(simTime);
+  let offSessionMode=false;
   if(!isForex&&currency==='IDR'){
     if(dow===0||dow===6) return;
-    if(h<9||h>=16) return;
+    if(h<9||h>=16) offSessionMode=true;
     if(h===9&&min===0){
       State.set(`prices.${symbol}`,{...ps,open:ps.last,high:ps.last,low:ps.last,change:0,changePct:0});
       // Reset IHSG open too
@@ -227,27 +246,98 @@ function updatePrice(asset,simTime){
   }
   const{base,spike}=VOL[vol]||VOL.normal;
   const dec=decimals(ps.last,currency);
-  const vf=Math.random()<0.02?spike:base;
-  const change=(Math.random()-.495)*vf+(Math.random()-.5)*vf*.5;
+  const vf=offSessionMode?base*0.2:(Math.random()<0.02?spike:base);
+  const microTrend=((ps.last-(ps.open||ps.last))/(ps.open||ps.last))*-0.04;
+  const gaussian=(randn()+randn()*0.35)*vf;
+  const changeRaw=(gaussian*0.45)+microTrend;
+  const lim=TICK_MOVE_LIMIT[vol]||0.008;
+  const change=clamp(changeRaw,-lim,lim)*(offSessionMode?0.25:1);
+  const crowd=simulateParticipantPressure(asset,ps);
   const ob=State.get(`orderBooks.${symbol}`);
   let imb=0;
   if(ob?.bids?.length&&ob?.asks?.length){
     const bv=ob.bids.slice(0,3).reduce((s,l)=>s+l.qty,0);
     const av=ob.asks.slice(0,3).reduce((s,l)=>s+l.qty,0);
-    imb=(bv-av)/(bv+av+1)*0.0002;
+    imb=(bv-av)/(bv+av+1)*0.0006;
   }
-  const newLast=Math.max(0.000001,round(ps.last*(1+change+imb),dec));
-  const spread=(LIQ[liq]?.spread||0.003)*newLast;
+  const orderPressure=getPendingOrderPressure(symbol);
+  const paceFactor=(!isForex&&currency==='IDR')?0.35:(isForex?0.55:1);
+  const activityMult=getMarketActivityMultiplier(asset);
+  const boundedMove=clamp(change+imb+orderPressure+crowd.pressure,-lim,lim)*paceFactor*activityMult;
+  const target=Math.max(0.000001,ps.last*(1+boundedMove));
+  refreshOrderBook(symbol,target,liq||'medium',dec);
+  const ob2=State.get(`orderBooks.${symbol}`)||ob;
+  const spread=(LIQ[liq]?.spread||0.003)*target;
+  const bestBid=ob2?.bids?.[0]?.price ?? round(target-spread*.5,dec);
+  const bestAsk=ob2?.asks?.[0]?.price ?? round(target+spread*.5,dec);
+  const fairMid=(bestBid+bestAsk)*0.5;
+  const targetTowardBook=target*0.35+fairMid*0.65;
+  let newLast=Math.max(0.000001,round(targetTowardBook,dec));
+  if(newLast===ps.last&&Math.abs(boundedMove)>0.00035){
+    const tick=tickSize(ps.last,currency);
+    const dir=boundedMove>0?1:-1;
+    newLast=Math.max(0.000001,round(ps.last+dir*tick,dec));
+  }
   const openP=ps.open>0?ps.open:newLast;
   const changePct=Math.max(-99,Math.min(99,round((newLast-openP)/openP*100,2)));
+  const volInc=getVolumeIncrement(asset,offSessionMode,crowd,activityMult);
   State.set(`prices.${symbol}`,{...ps,last:newLast,
-    bid:round(newLast-spread*.5,dec),ask:round(newLast+spread*.5,dec),
+    bid:bestBid,ask:bestAsk,
     high:Math.max(ps.high,newLast),low:Math.min(ps.low,newLast),
     change:round(newLast-openP,dec),changePct,
-    volume:(ps.volume||0)+Math.floor(Math.random()*5000),
+    volume:(ps.volume||0)+volInc,
   });
-  updateCandles(symbol,simTime,newLast,Math.floor(Math.random()*5000));
-  refreshOrderBook(symbol,newLast,liq||'medium',dec);
+  updateCandles(symbol,simTime,newLast,volInc);
+}
+
+function simulateParticipantPressure(asset,ps){
+  // Simulasi pelaku pasar: ritel kecil, ritel besar, dan bandar.
+  const basePrice=ps?.last||asset?.basePrice||1;
+  const liq=asset?.liq||'medium';
+  const vol=asset?.vol||'normal';
+  const liqMult=liq==='thick'?0.7:liq==='thin'?1.4:1;
+  const volMult=vol==='bluechip'?0.7:vol==='extreme'?1.8:1;
+  const trend=((ps.last-(ps.open||ps.last))/(ps.open||ps.last));
+
+  const ritelKecil=(Math.random()-0.5)*0.0007*liqMult;
+  const ritelBesar=(Math.random()-0.5)*0.0016*volMult;
+  const bandarShock=(Math.random()<0.06?(Math.random()-0.5)*0.006*volMult:0);
+  const trendFollow=trend*0.08;
+
+  const pressure=clamp(ritelKecil+ritelBesar+bandarShock+trendFollow,-0.012,0.012);
+  const baseVol=liq==='thick'?12000:liq==='thin'?1800:5000;
+  const extraVolume=Math.max(0,Math.floor(baseVol*(Math.abs(pressure)*40+Math.random()*0.4)));
+  return { pressure, extraVolume };
+}
+
+function getVolumeIncrement(asset,offSessionMode,crowd,activityMult=1){
+  const liq=asset?.liq||'medium';
+  const isStock=asset?.currency==='IDR'&&!asset?.isForex&&!asset?.isCrypto;
+  if(offSessionMode) return Math.floor(Math.random()*8*activityMult);
+  if(isStock){
+    const base=liq==='thick'?60:liq==='thin'?8:25;
+    return Math.max(1,Math.floor((base+Math.random()*base*2+Math.abs(crowd.pressure)*1500)*activityMult));
+  }
+  const base=liq==='thick'?220:liq==='thin'?25:90;
+  return Math.max(2,Math.floor((base+Math.random()*base*3+Math.abs(crowd.pressure)*4000)*activityMult));
+}
+
+function getPendingOrderPressure(symbol){
+  const ordersByUser=State.get('orders')||{};
+  let buyQty=0,sellQty=0;
+  Object.values(ordersByUser).forEach(list=>{
+    (list||[]).forEach(o=>{
+      if(o.symbol!==symbol) return;
+      if(!['pending','partial'].includes(o.status)) return;
+      const rem=Math.max(0,(o.qty||0)-(o.filledQty||0));
+      if(rem<=0) return;
+      if(o.side==='buy') buyQty+=rem;
+      else sellQty+=rem;
+    });
+  });
+  if(!buyQty&&!sellQty) return 0;
+  const net=(buyQty-sellQty)/(buyQty+sellQty+1);
+  return net*0.0045;
 }
 
 // ─── Correlations & AUM ──────────────────────────────────────
@@ -266,8 +356,9 @@ function applyCorrelations(){
       if(ihsgHalted){const sp2=State.get(`prices.${sym}`);if(sp2&&sp2.currency==='IDR'&&!sp2.isForex)return;}
       const sp=State.get(`prices.${sym}`); if(!sp) return;
       const corr=group.strength*(0.5+Math.random()*.5);
-      let effect=(lp.changePct/100)*corr;
+      let effect=(lp.changePct/100)*corr*0.1;
       if(group.canInverse&&Math.random()<0.15) effect=-effect;
+      effect=clamp(effect,-0.01,0.01);
       const dec=decimals(sp.last,sp.currency);
       const nl=Math.max(0.000001,round(sp.last*(1+effect),dec));
       const op=sp.open>0?sp.open:nl;
@@ -387,6 +478,37 @@ function checkDividendCumDate(simTime){
   });
 }
 
+function processMonthlyDividends(simTime){
+  if(simTime.getDate()!==1||simTime.getHours()<9) return;
+  const monthKey=`${simTime.getFullYear()}-${String(simTime.getMonth()+1).padStart(2,'0')}`;
+  if(State.get('lastDividendSweep')===monthKey) return;
+  State.set('lastDividendSweep',monthKey);
+
+  const portfolios=State.get('portfolio')||{};
+  Object.entries(portfolios).forEach(([userId,port])=>{
+    Object.entries(port.holdings||{}).forEach(([symbol,holding])=>{
+      const divInfo=DIVIDEND_STOCKS[symbol]; if(!divInfo) return;
+      const ps=State.get(`prices.${symbol}`); if(!ps) return;
+      const monthlyDivPerShare=round((ps.last*divInfo.yieldPct)/12,0);
+      const totalDiv=monthlyDivPerShare*holding.qty;
+      if(totalDiv<=0) return;
+      const periodKey=`${symbol}_${monthKey}_monthly`;
+      const divs=State.get(`dividends.${userId}`)||[];
+      if(divs.find(d=>d.periodKey===periodKey)) return;
+      const divRecord={
+        id:'DIV'+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,4).toUpperCase(),
+        userId,symbol,qty:holding.qty,divPerShare:monthlyDivPerShare,totalAmount:totalDiv,
+        currency:'IDR',cumDate:simTime.toISOString(),
+        payDate:new Date(simTime.getTime()+3*86400000).toISOString(),
+        yieldPct:divInfo.yieldPct,claimed:false,type:'dividend',
+        note:'Dividen bulanan simulasi',periodKey,
+      };
+      State.set(`dividends.${userId}`,[divRecord,...divs].slice(0,200));
+      State.emit('dividend.available',divRecord);
+    });
+  });
+}
+
 // Also track past holders for dividend (snapshot at cum-date)
 // This is called after SELL transaction to record "held at cum-date" history
 export function recordDividendEligibility(userId, symbol, qtyHeld, simTime){
@@ -432,6 +554,8 @@ export function claimDividend(userId, divId){
   port.totalDividends=(port.totalDividends||0)+divs[idx].totalAmount;
   State.set(`portfolio.${userId}`,{...port});
   State.set(`dividends.${userId}`,[...divs]);
+  recordTx(userId,{type:'dividend_claim',symbol:divs[idx].symbol,qty:divs[idx].qty,
+    price:divs[idx].divPerShare,amount:divs[idx].totalAmount,fee:0,orderId:divs[idx].id,currency:'IDR'});
   State.emit(`portfolio.${userId}`,State.get(`portfolio.${userId}`));
   return{ok:true,amount:divs[idx].totalAmount};
 }
@@ -439,9 +563,10 @@ export function claimDividend(userId, divId){
 export function claimAllDividends(userId){
   const divs=State.get(`dividends.${userId}`)||[];
   let total=0;
+  let claimedCount=0;
   const updated=divs.map(d=>{
     if(d.claimed) return d;
-    total+=d.totalAmount; return{...d,claimed:true,claimedAt:new Date().toISOString()};
+    total+=d.totalAmount; claimedCount++; return{...d,claimed:true,claimedAt:new Date().toISOString()};
   });
   if(total<=0) return{ok:false,error:'Tidak ada dividen yang bisa diclaim'};
   State.set(`dividends.${userId}`,updated);
@@ -449,6 +574,8 @@ export function claimAllDividends(userId){
   port.cash_idr=(port.cash_idr||0)+total;
   port.totalDividends=(port.totalDividends||0)+total;
   State.set(`portfolio.${userId}`,{...port});
+  recordTx(userId,{type:'dividend_claim_all',symbol:'DIV',qty:claimedCount,
+    price:0,amount:total,fee:0,orderId:'DIVALL'+Date.now().toString(36).toUpperCase(),currency:'IDR'});
   State.emit(`portfolio.${userId}`,State.get(`portfolio.${userId}`));
   return{ok:true,total};
 }
@@ -475,6 +602,8 @@ export function subscribeToIPO(userId, symbol, requestedLots){
   if(!subs[userId]) subs[userId]={};
   subs[userId][symbol]={qty:requestedLots,cost,offerPrice:ipo.offerPrice,status:'pending'};
   State.set('ipoSubscriptions',subs);
+  recordTx(userId,{type:'ipo_subscribe',symbol,qty:requestedLots,price:ipo.offerPrice,
+    amount:cost,fee:0,orderId:'IPO'+Date.now().toString(36).toUpperCase(),currency:'IDR'});
   ipo.subscribed=(ipo.subscribed||0)+1;
   State.set('assets',{...a});
   State.saveToStorage();
@@ -492,11 +621,21 @@ function checkIPOAutoListing(){
     src.list.forEach(ipo=>{
       if(!ipo.phaseEnd||ipo.phase==='listed') return;
       if(new Date(ipo.phaseEnd)>simNow) return;
+      if(ipo.phase==='prelisting'){
+        ipo.phase='subscription';
+        ipo.phaseEnd=new Date(simNow.getTime()+5*24*60*60*1000).toISOString();
+        const preEvt={id:'IPOPH'+Date.now()+ipo.symbol,symbol:ipo.symbol,
+          message:`📋 ${ipo.symbol} masuk fase subscription IPO.`,
+          sentiment:0.03,category:'ipo',time:simNow.toISOString(),read:false};
+        State.push('newsEvents',preEvt); State.emit('news.new',preEvt);
+        return;
+      }
       ipo.phase='listed'; anyListed=true;
       const premium=Math.min((ipo.subscribed||1)/10,0.5);
       const lp=round(ipo.offerPrice*(1+premium),ipo.currency==='IDR'?0:4);
       if(!State.get(`prices.${ipo.symbol}`)){
-        initPrice({...ipo,basePrice:lp}); initCandles(ipo.symbol,lp,'high');
+        initPrice({...ipo,basePrice:lp},{freshBook:true});
+        initFreshCandles(ipo.symbol,lp,simNow);
       }
       // Add to listedAssets for normal trading
       const listed=State.get('listedAssets')||[];
@@ -574,7 +713,8 @@ export function createCryptoCoin(userId,{symbol,name,totalSupply,initialPrice,de
   listed.push({...asset,fromIPO:false});
   State.set('listedAssets',listed);
 
-  initPrice(asset); initCandles(symbol,initialPrice,'extreme');
+  initPrice(asset,{freshBook:true});
+  initFreshCandles(symbol,initialPrice,State.get('simTime')||new Date());
 
   // Announce
   const evt={id:'LAUNCH'+Date.now(),symbol,
@@ -711,6 +851,9 @@ export function skipSimTime(minutes){
       const ct=new Date(t.getTime()+m*30*24*60*60*1000);
       ct.setDate(14); ct.setHours(15,0,0,0);
       checkDividendCumDate(ct);
+      const mt=new Date(t.getTime()+m*30*24*60*60*1000);
+      mt.setDate(1); mt.setHours(9,0,0,0);
+      processMonthlyDividends(mt);
     }
   }
   State.saveToStorage(); State.emit('tick',nt);
@@ -919,11 +1062,18 @@ function updateCandles(symbol,simTime,price,vol){
 }
 
 function refreshOrderBook(symbol,mid,liqProfile,dec){
-  if(Math.random()>0.4) return;
-  const{baseSize,spread}=LIQ[liqProfile]||LIQ.medium;
+  const cfg=LIQ[liqProfile]||LIQ.medium;
+  const{baseSize,spread,levels}=cfg;
   const ob=State.get(`orderBooks.${symbol}`)||{bids:[],asks:[]};
   const bids=ob.bids.map((l,i)=>({price:round(mid*(1-(spread*(i+1))*(0.85+Math.random()*.3)),dec),qty:Math.max(100,l.qty+Math.floor((Math.random()-.5)*baseSize*.15))})).sort((a,b)=>b.price-a.price);
   const asks=ob.asks.map((l,i)=>({price:round(mid*(1+(spread*(i+1))*(0.85+Math.random()*.3)),dec),qty:Math.max(100,l.qty+Math.floor((Math.random()-.5)*baseSize*.15))})).sort((a,b)=>a.price-b.price);
+  if(bids.length<levels&&Math.random()<0.2){
+    const i=bids.length+1;
+    bids.push({price:round(mid*(1-spread*i),dec),qty:Math.max(100,Math.floor(baseSize*0.2))});
+    asks.push({price:round(mid*(1+spread*i),dec),qty:Math.max(100,Math.floor(baseSize*0.2))});
+    bids.sort((a,b)=>b.price-a.price);
+    asks.sort((a,b)=>a.price-b.price);
+  }
   State.set(`orderBooks.${symbol}`,{bids,asks});
   State.emit(`orderBook.${symbol}`,{bids,asks});
 }
@@ -944,13 +1094,53 @@ export function processDeposit(userId,depositId){
   const idx=deps.findIndex(d=>d.id===depositId); if(idx===-1) return;
   const dep=deps[idx];
   const r=Math.random();
-  const status=r<0.05?'rejected':r<0.1?'hold':'success';
-  const note={success:'Deposit berhasil',rejected:'Bukti tidak valid',hold:'Verifikasi tambahan'}[status];
+  const status=r<0.05?'failed':r<0.12?'hold':'success';
+  const note={success:'Deposit berhasil',failed:'Transfer gagal/ditolak',hold:'Menunggu verifikasi manual'}[status];
   deps[idx]={...dep,status,processedAt:new Date().toISOString(),adminNote:note};
   State.set(`deposits.${userId}`,[...deps]);
   if(status==='success'){const p=State.get(`portfolio.${userId}`)||initPortfolio(userId);p.cash_idr=(p.cash_idr||0)+dep.amountIDR;State.set(`portfolio.${userId}`,{...p});}
   State.emit('deposit.updated',deps[idx]);
   State.emit(`portfolio.${userId}`,State.get(`portfolio.${userId}`));
+  if(status==='hold') setTimeout(()=>processDeposit(userId,depositId),(5+Math.random()*8)*1000);
+}
+
+export function requestWithdraw(userId,amount,currency,method,destination){
+  const fxR=currency==='IDR'?1:getForexRate('USD/IDR');
+  const amountIDR=amount*fxR;
+  const port=State.get(`portfolio.${userId}`)||initPortfolio(userId);
+  const pendingWD=(port.pendingWithdrawIDR||0);
+  if((port.cash_idr||0)-pendingWD<amountIDR){
+    return {ok:false,error:`Saldo tersedia tidak cukup. Tersedia: ${fmtIDR((port.cash_idr||0)-pendingWD)}`};
+  }
+  port.pendingWithdrawIDR=pendingWD+amountIDR;
+  State.set(`portfolio.${userId}`,{...port});
+  const wd={id:'WD'+Date.now().toString(36).toUpperCase(),userId,amount,currency,method,destination,
+    amountIDR,status:'pending',type:'withdraw',createdAt:new Date().toISOString(),processedAt:null,adminNote:'Menunggu verifikasi'};
+  State.set(`deposits.${userId}`,[wd,...(State.get(`deposits.${userId}`)||[])]);
+  setTimeout(()=>processWithdraw(userId,wd.id),(4+Math.random()*8)*1000);
+  return {ok:true,withdraw:wd};
+}
+
+export function processWithdraw(userId,withdrawId){
+  const deps=State.get(`deposits.${userId}`)||[];
+  const idx=deps.findIndex(d=>d.id===withdrawId&&d.type==='withdraw'); if(idx===-1) return;
+  const wd=deps[idx];
+  if(wd.status!=='pending'&&wd.status!=='hold') return;
+  const r=Math.random();
+  const status=r<0.08?'failed':r<0.2?'hold':'success';
+  const note={success:'Dana berhasil dikirim',failed:'Penarikan ditolak/gagal',hold:'Penarikan tertahan untuk verifikasi'}[status];
+  deps[idx]={...wd,status,processedAt:new Date().toISOString(),adminNote:note};
+  State.set(`deposits.${userId}`,[...deps]);
+  const port=State.get(`portfolio.${userId}`)||initPortfolio(userId);
+  port.pendingWithdrawIDR=Math.max(0,(port.pendingWithdrawIDR||0)-wd.amountIDR);
+  if(status==='success'){
+    port.cash_idr=(port.cash_idr||0)-wd.amountIDR;
+    recordTx(userId,{type:'withdraw',symbol:'IDR',qty:1,price:wd.amountIDR,amount:wd.amountIDR,fee:0,orderId:wd.id,currency:'IDR'});
+  }
+  State.set(`portfolio.${userId}`,{...port});
+  State.emit('deposit.updated',deps[idx]);
+  State.emit(`portfolio.${userId}`,State.get(`portfolio.${userId}`));
+  if(status==='hold') setTimeout(()=>processWithdraw(userId,withdrawId),(6+Math.random()*8)*1000);
 }
 
 // ─── Forex ────────────────────────────────────────────────────
@@ -960,6 +1150,44 @@ export function fromIDR(amt,cur){return cur==='IDR'?amt:amt/getForexRate('USD/ID
 
 // ─── Utils ────────────────────────────────────────────────────
 export function round(v,dec){if(!dec||dec<=0)return Math.round(v);const f=10**dec;return Math.round(v*f)/f;}
+function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+function randn(){
+  const u1=Math.max(1e-12,Math.random());
+  const u2=Math.random();
+  return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);
+}
+function estimateFreeFloatShares(asset){
+  if(asset?.freeFloatShares&&asset.freeFloatShares>0) return asset.freeFloatShares;
+  const base=asset?.basePrice||1000;
+  if(base>=10000) return 12_000_000_000;
+  if(base>=5000) return 20_000_000_000;
+  if(base>=1000) return 35_000_000_000;
+  return 60_000_000_000;
+}
+function isTradableAsset(asset){
+  if(!asset) return false;
+  return !asset.phase || asset.phase==='listed';
+}
+function getMarketActivityMultiplier(asset){
+  const cfg=State.get('marketActivity')||{all:1,stocks:1,crypto:1,forex:1};
+  let key='all';
+  if(asset?.isForex) key='forex';
+  else if(asset?.isCrypto||asset?.currency==='USD') key='crypto';
+  else if(asset?.currency==='IDR') key='stocks';
+  const all=cfg.all??1, specific=cfg[key]??1;
+  return Math.max(0.2,Math.min(3,all*specific));
+}
+function tickSize(price,currency){
+  if(currency&&currency!=='IDR') return price>100?0.01:price>1?0.001:0.000001;
+  if(price>=5000) return 5;
+  if(price>=200) return 1;
+  return 0.1;
+}
+function getWIBParts(dateObj){
+  const ts=dateObj.getTime()+7*60*60*1000; // WIB UTC+7
+  const d=new Date(ts);
+  return { h:d.getUTCHours(), min:d.getUTCMinutes(), dow:d.getUTCDay() };
+}
 function decimals(price,currency){
   if(!currency||currency==='IDR') return price>1000?0:1;
   return price>100?2:price>1?4:price>0.01?6:8;

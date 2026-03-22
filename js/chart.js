@@ -486,6 +486,19 @@ class TradingChart {
     this.indicators[name] = !this.indicators[name];
   }
 
+  zoomIn(step = 2) {
+    this.scale = Math.max(4, Math.min(40, this.scale + step));
+  }
+
+  zoomOut(step = 2) {
+    this.scale = Math.max(4, Math.min(40, this.scale - step));
+  }
+
+  resetZoom() {
+    this.scale = 10;
+    this.offsetX = 0;
+  }
+
   addDrawing(drawing) {
     this.drawings.push(drawing);
     State.set(`drawings.${this.symbol}`, this.drawings);

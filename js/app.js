@@ -1,7 +1,7 @@
 // app.js v8 — complete rewrite with all features
 import State from './state.js';
 import { initMarket, startEngine, stopEngine, placeOrder, cancelOrder,
-         initPortfolio, requestDeposit, computeAUM, getForexRate, skipSimTime,
+         initPortfolio, requestDeposit, requestWithdraw, computeAUM, getForexRate, skipSimTime,
          subscribeToIPO, createCryptoCoin, rugPullCrypto,
          suspendAsset, unsuspendAsset, haltIHSG, resumeIHSG,
          claimDividend, claimAllDividends,
@@ -47,7 +47,7 @@ function startApp(sess) {
   selectAssetSilent(State.get('activeAsset')||'BBCA');
   navigateTo('home'); startEngine(); subscribe();
   clearInterval(saveTimer);
-  saveTimer=setInterval(()=>State.saveToStorage(),5*60*1000);
+  saveTimer=setInterval(()=>State.saveToStorage(),60*1000);
 }
 
 function handleLogin(e) {
@@ -177,7 +177,7 @@ function subscribe() {
     const active=State.get('activeAsset');
     updateTradeHeader(active); renderSidebarPrices(); updateDesktopPort(); updateSimTime();
     if(chart&&chartInited) chart.update();
-    if(currentPage==='home') renderHomePortfolio();
+    if(currentPage==='home') refreshHome();
     if(currentPage==='market') renderMarketPrices();
     renderIHSGMiniChart();
     if(currentPage==='ihsg') renderIHSGPage();
@@ -196,7 +196,11 @@ function subscribe() {
   });
   State.on('order.filled',o=>{toast(`✅ ${o.symbol} ${o.status==='filled'?'TERISI':'PARTIAL'}`,  'success');renderDesktopOrders();if(currentPage==='portfolio')renderPortfolio();});
   State.on('order.placed',()=>renderDesktopOrders());
-  State.on('order.cancelled',()=>{renderDesktopOrders();toast('Order dibatalkan','info');});
+  State.on('order.cancelled',()=>{
+    renderDesktopOrders();
+    if(currentPage==='portfolio') renderPortfolio();
+    toast('Order dibatalkan','info');
+  });
   State.on('news.new',()=>{if(currentPage==='home')renderHomeNews();if(currentPage==='news')renderNewsFull();});
   State.on('deposit.updated',dep=>{toast(`${dep.status==='success'?'✅':'❌'} ${fmtM(dep.amount,dep.currency)}`,dep.status==='success'?'success':'warn');if(currentPage==='wallet')renderWallet();updateDesktopPort();});
   State.on('dividend.available',div=>{
@@ -212,12 +216,6 @@ function subscribe() {
     if(currentPage==='ipo')       renderIPOPage();
     if(currentPage==='portfolio') renderPortfolio();
     if(currentPage==='home')      refreshHome();
-  });
-  State.on('ipo.allocated',ev=>{
-    const sess=State.get('session'); if(sess?.userId!==ev.userId) return;
-    const gain=ev.gain||0;
-    toast(`🎉 ${ev.symbol} listing! ${ev.qty.toLocaleString()} lot @ ${fmtP(ev.offerPrice)}. Harga sekarang ${fmtP(ev.listingPrice)}. ${gain>=0?'+':''}\${fmtM(gain,'IDR')}`,gain>=0?'success':'warn');
-    if(currentPage==='portfolio') renderPortfolio();
   });
   State.on('ipo.allocated',ev=>{
     const sess=State.get('session'); if(sess?.userId!==ev.userId) return;
@@ -272,14 +270,33 @@ function renderSidebarPrices() {
 }
 
 // ─── IHSG Display ─────────────────────────────────────────────
+
+function getIHSGMarketStatus(){
+  if(State.get('ihsgHalted')) return {code:'halt',label:'🔴 HALT',badge:'HALT'};
+  const t=State.get('simTime');
+  if(!t) return {code:'normal',label:'🟢 Normal',badge:''};
+  const ts=t.getTime()+7*60*60*1000; // WIB
+  const d=new Date(ts);
+  const dow=d.getUTCDay();
+  const h=d.getUTCHours();
+  if(dow===0||dow===6) return {code:'weekend',label:'🟡 Market Tutup Hari Libur',badge:'TUTUP'};
+  if(h<9||h>=16) return {code:'offhours',label:'🟡 Market Tutup di luar jam market (09:00-16:00 WIB)',badge:'TUTUP'};
+  return {code:'normal',label:'🟢 Normal',badge:''};
+}
+
 function updateIHSGDisplay() {
   const ihsg=State.get('ihsg'); if(!ihsg) return;
   const up=ihsg.changePct>=0;
   setEl('ihsg-value',ihsg.value?.toLocaleString('id-ID',{maximumFractionDigits:2})||'-');
   const chgEl=$('ihsg-chg');
   if(chgEl){chgEl.textContent=`${up?'+':''}${ihsg.changePct?.toFixed(2)}%`;chgEl.className=`ihsg-chg ${up?'up':'down'}`;}
+  const status=getIHSGMarketStatus();
   const haltEl=$('ihsg-halt-badge');
-  if(haltEl) haltEl.style.display=State.get('ihsgHalted')?'':'none';
+  if(haltEl){
+    haltEl.style.display=status.badge?'':'none';
+    haltEl.textContent=status.badge||'HALT';
+    haltEl.title=status.label;
+  }
   // Topnav IHSG values
   setEl('ihsg-value', ihsg.value?.toLocaleString('id-ID',{maximumFractionDigits:2})||'-');
   const chgNav=$('ihsg-chg');
@@ -412,8 +429,8 @@ function renderIHSGPage() {
   setEl('ihsg-adv',adv+'');
   setEl('ihsg-dec',dec+'');
   setEl('ihsg-unch',unch+'');
-  const halted=State.get('ihsgHalted')||false;
-  setEl('ihsg-status-txt',halted?'🔴 HALT':'🟢 Normal');
+  const status=getIHSGMarketStatus();
+  setEl('ihsg-status-txt',status.label);
 
   // Top movers
   movers.sort((a,b)=>Math.abs(b.changePct)-Math.abs(a.changePct));
@@ -608,15 +625,44 @@ function renderIPOMktList() {
 }
 
 // ─── Order Book ───────────────────────────────────────────────
+function aggregateVisibleOrders(sym){
+  const ordersByUser=State.get('orders')||{};
+  const askMap=new Map(), bidMap=new Map();
+  Object.values(ordersByUser).forEach(list=>{
+    (list||[]).forEach(o=>{
+      if(o.symbol!==sym) return;
+      if(!['pending','partial'].includes(o.status)) return;
+      if(o.type!=='limit'&&o.type!=='take_profit') return;
+      const rem=Math.max(0,(o.qty||0)-(o.filledQty||0));
+      if(rem<=0||!o.price) return;
+      const map=o.side==='buy'?bidMap:askMap;
+      map.set(o.price,(map.get(o.price)||0)+rem);
+    });
+  });
+  return {askMap,bidMap};
+}
+
+function mergeBookSide(base,pendingMap,isAsk){
+  const m=new Map();
+  (base||[]).forEach(l=>m.set(l.price,(m.get(l.price)||0)+(l.qty||0)));
+  pendingMap.forEach((qty,price)=>m.set(price,(m.get(price)||0)+qty));
+  const arr=[...m.entries()].map(([price,qty])=>({price:Number(price),qty:Math.round(qty)}));
+  arr.sort((a,b)=>isAsk?a.price-b.price:b.price-a.price);
+  return arr;
+}
+
 function renderOrderBook() {
   const sym=State.get('activeAsset'); const ob=State.get(`orderBooks.${sym}`); if(!ob) return;
   const ae=$('ob-asks'),be=$('ob-bids'); if(!ae||!be) return;
-  const max=Math.max(...ob.asks.slice(0,10).map(l=>l.qty),...ob.bids.slice(0,10).map(l=>l.qty),1);
-  ae.innerHTML=ob.asks.slice(0,10).reverse().map(l=>`<div class="ob-row ask" data-price="${l.price}"><span class="ob-price down">${fmtP(l.price)}</span><span class="ob-qty">${l.qty.toLocaleString()}</span><div class="ob-bar ask-bar" style="width:${(l.qty/max*100).toFixed(1)}%"></div></div>`).join('');
+  const pending=aggregateVisibleOrders(sym);
+  const asks=mergeBookSide(ob.asks,pending.askMap,true).slice(0,10);
+  const bids=mergeBookSide(ob.bids,pending.bidMap,false).slice(0,10);
+  const max=Math.max(...asks.map(l=>l.qty),...bids.map(l=>l.qty),1);
+  ae.innerHTML=asks.slice().reverse().map(l=>`<div class="ob-row ask" data-price="${l.price}"><span class="ob-price down">${fmtP(l.price)}</span><span class="ob-qty">${l.qty.toLocaleString()}</span><div class="ob-bar ask-bar" style="width:${(l.qty/max*100).toFixed(1)}%"></div></div>`).join('');
   const ps=State.get(`prices.${sym}`);
   const se=$('ob-spread');
-  if(se&&ob.asks[0]&&ob.bids[0]){const sp=((ob.asks[0].price-ob.bids[0].price)/ob.bids[0].price*100).toFixed(3);se.innerHTML=`<span class="ob-mid">${fmtP(ps?.last)}</span><span class="ob-spread-label">Spread: ${sp}%</span>`;}
-  be.innerHTML=ob.bids.slice(0,10).map(l=>`<div class="ob-row bid" data-price="${l.price}"><span class="ob-price up">${fmtP(l.price)}</span><span class="ob-qty">${l.qty.toLocaleString()}</span><div class="ob-bar bid-bar" style="width:${(l.qty/max*100).toFixed(1)}%"></div></div>`).join('');
+  if(se&&asks[0]&&bids[0]){const sp=((asks[0].price-bids[0].price)/Math.max(1e-9,bids[0].price)*100).toFixed(3);se.innerHTML=`<span class="ob-mid">${fmtP(ps?.last)}</span><span class="ob-spread-label">Spread: ${sp}%</span>`;}
+  be.innerHTML=bids.map(l=>`<div class="ob-row bid" data-price="${l.price}"><span class="ob-price up">${fmtP(l.price)}</span><span class="ob-qty">${l.qty.toLocaleString()}</span><div class="ob-bar bid-bar" style="width:${(l.qty/max*100).toFixed(1)}%"></div></div>`).join('');
   [ae,be].forEach(c=>c.querySelectorAll('.ob-row').forEach(r=>r.addEventListener('click',()=>setOBPrice(r.dataset.price))));
 }
 
@@ -633,14 +679,15 @@ window.setQtyPct=(prefix,pct)=>{
   const sym=State.get('activeAsset'),ps=State.get(`prices.${sym}`);if(!ps)return;
   const side=document.querySelector('.order-side-btn.active')?.dataset.side||'buy';
   const fxR=ps.currency==='IDR'?1:getForexRate('USD/IDR');
-  const priceInput=$(prefix+'-order-price');
+  const pfx=prefix.endsWith('-')?prefix.slice(0,-1):prefix;
+  const priceInput=$(pfx+'-order-price');
   const usePrice=parseFloat(priceInput?.value)||ps.last;
   let maxQty=0;
   if(side==='buy'){const balIDR=port.cash_idr||0;if(balIDR<=0){toast('Saldo tidak cukup','error');return;}maxQty=Math.floor(balIDR/(usePrice*fxR*(1+FEE_BUY)));}
   else{maxQty=port.holdings?.[sym]?.qty||0;}
   if(maxQty<=0){toast(side==='buy'?'Saldo tidak cukup':'Tidak ada kepemilikan','error');return;}
   const qty=Math.max(1,Math.floor(maxQty*pct/100));
-  const qtyInput=$(prefix+'-order-qty');
+  const qtyInput=$(pfx+'-order-qty');
   if(qtyInput){qtyInput.value=qty;qtyInput.style.borderColor='var(--blue)';qtyInput.style.boxShadow='0 0 0 2px rgba(26,111,255,.2)';setTimeout(()=>{qtyInput.style.borderColor='';qtyInput.style.boxShadow='';},600);updateOrderTotals();}
 };
 
@@ -780,7 +827,11 @@ function renderPortfolio() {
         <div><div class="phl-pnl-v ${pnl>=0?'up':'down'}">${pnl>=0?'+':''}${fmtM(pnl,'IDR')}</div><div class="phl-pnl-p ${pnl>=0?'up':'down'}">${pct>=0?'+':''}${pct.toFixed(2)}%</div></div></div>
       <div class="phl-stats"><div class="phl-stat"><label>Qty</label><span>${hld.qty.toLocaleString()}</span></div><div class="phl-stat"><label>Avg</label><span>${fmtP(hld.avgCost,cur)}</span></div><div class="phl-stat"><label>Last</label><span>${fmtP(last,cur)}</span></div></div>
       ${divInfo?`<div class="phl-div-hint">Dividen yield ${(divInfo.yieldPct*100).toFixed(1)}%/thn · est. ${fmtM(round(last*divInfo.yieldPct*hld.qty*fx,0),'IDR')}</div>`:''}
-      <div class="phl-actions"><button class="btn-sell-q" onclick="event.stopPropagation();window.quickSell('${sym}',${hld.qty})">Jual Semua</button><button class="btn-chart-q" onclick="event.stopPropagation();window.selectAssetUI('${sym}')">Chart</button></div></div>`;
+      <div class="phl-actions">
+        <button class="btn-sell-q" onclick="event.stopPropagation();window.quickSell('${sym}',${hld.qty})">Jual Semua</button>
+        ${a?.custom&&a?.isCrypto?`<button class="btn-sell-q" style="background:rgba(240,64,64,.12);border-color:rgba(240,64,64,.35);color:var(--dn)" onclick="event.stopPropagation();window.rugPullUI('${sym}')">Rugpull</button>`:''}
+        <button class="btn-chart-q" onclick="event.stopPropagation();window.selectAssetUI('${sym}')">Chart</button>
+      </div></div>`;
   }).join('');
 
   // Open Orders
@@ -844,10 +895,36 @@ function renderWallet() {
     </div>`).join('');
 
   const deps=(State.get(`deposits.${sess.userId}`)||[]).slice(0,40);
+  const txs=(State.get(`transactions.${sess.userId}`)||[]).slice(0,80);
   const el=$('wallet-history');if(!el)return;
-  el.innerHTML=!deps.length?'<div class="empty-msg">Belum ada riwayat</div>':deps.map(d=>{
-    const amt=walletCur==='IDR'?(d.amountIDR||d.amount):((d.amountIDR||d.amount)/fxR);
-    return `<div class="wh-item ${d.type==='withdraw'?'wd':'dep'}"><div class="wh-top"><div class="wh-type ${d.type==='withdraw'?'down':'up'}">${d.type==='withdraw'?'Withdraw':'Deposit'}</div><div class="wh-amount">${fmtM(amt,walletCur)}</div></div><div class="wh-detail">${d.method} · <span class="badge badge-${d.status}">${d.status}</span>${d.adminNote?' · '+d.adminNote:''}</div><div class="wh-time">${new Date(d.createdAt).toLocaleString('id-ID')}</div></div>`;
+  const cashEvents=[
+    ...deps.map(d=>({
+      t:new Date(d.createdAt).getTime(),
+      cls:d.type==='withdraw'?'wd':'dep',
+      type:d.type==='withdraw'?'Withdraw':'Deposit',
+      up:d.type!=='withdraw',
+      amountIDR:d.amountIDR||d.amount||0,
+      detail:`${d.method} · ${d.status}${d.adminNote?' · '+d.adminNote:''}`,
+      when:d.createdAt,
+    })),
+    ...txs.filter(tx=>['buy','sell','ipo_subscribe','dividend_claim','dividend_claim_all','withdraw'].includes(tx.type)).map(tx=>{
+      const buyLike=['buy','ipo_subscribe','withdraw'].includes(tx.type);
+      const inLike=['sell','dividend_claim','dividend_claim_all'].includes(tx.type);
+      const sign=inLike?1:-1;
+      return {
+        t:new Date(tx.timestamp).getTime(),
+        cls:buyLike?'wd':'dep',
+        type:tx.type==='ipo_subscribe'?'IPO Subscribe':tx.type==='dividend_claim'?'Claim Dividen':tx.type==='dividend_claim_all'?'Claim Semua Dividen':tx.type==='withdraw'?'Withdraw':tx.type.toUpperCase(),
+        up:sign>0,
+        amountIDR:(tx.amount||0)*sign,
+        detail:`${tx.symbol||'-'} · Qty ${(tx.qty||0).toLocaleString()} · ${fmtP(tx.price,tx.currency)}`,
+        when:tx.timestamp,
+      };
+    }),
+  ].sort((a,b)=>b.t-a.t).slice(0,80);
+  el.innerHTML=!cashEvents.length?'<div class="empty-msg">Belum ada riwayat</div>':cashEvents.map(ev=>{
+    const amt=walletCur==='IDR'?ev.amountIDR:(ev.amountIDR/fxR);
+    return `<div class="wh-item ${ev.cls}"><div class="wh-top"><div class="wh-type ${ev.up?'up':'down'}">${ev.type}</div><div class="wh-amount">${ev.up?'+':''}${fmtM(amt,walletCur)}</div></div><div class="wh-detail">${ev.detail}</div><div class="wh-time">${new Date(ev.when).toLocaleString('id-ID')}</div></div>`;
   }).join('');
 }
 
@@ -875,15 +952,15 @@ function submitDeposit(){
 function submitWithdraw(){
   const sess=State.get('session');if(!sess)return;
   const amount=parseFloat($('wd-amount')?.value);const currency=$('wd-currency')?.value||'IDR';
+  const method=$('wd-method')?.value||'Transfer Bank BCA';
+  const destination=($('wd-account')?.value||'').trim();
   if(!amount||amount<=0){toast('Masukkan jumlah valid','error');return;}
-  const port=State.get(`portfolio.${sess.userId}`)||{};
-  const fxR=getForexRate('USD/IDR');
-  const availIDR=port.cash_idr||0;const need=currency==='IDR'?amount:amount*fxR;
-  if(need>availIDR){toast(`Saldo tidak cukup. Tersedia: ${fmtM(availIDR,'IDR')}`,'error');return;}
-  State.merge(`portfolio.${sess.userId}`,{cash_idr:availIDR-need});
-  const dep={id:'WD'+Date.now().toString(36).toUpperCase(),userId:sess.userId,amount,currency,method:'Withdraw',amountIDR:need,type:'withdraw',status:'success',createdAt:new Date().toISOString(),processedAt:new Date().toISOString(),adminNote:'Berhasil'};
-  State.set(`deposits.${sess.userId}`,[dep,...(State.get(`deposits.${sess.userId}`)||[])]);
-  State.saveToStorage();toast(`Withdraw ${fmtM(amount,currency)} berhasil`,'success');$('wd-amount').value='';renderWallet();
+  if(!destination){toast('Masukkan rekening/akun tujuan','error');return;}
+  const r=requestWithdraw(sess.userId,amount,currency,method,destination);
+  if(!r.ok){toast(`❌ ${r.error}`,'error');return;}
+  toast(`Withdraw ${fmtM(amount,currency)} diajukan (${method}) — status pending`,'info');
+  $('wd-amount').value=''; $('wd-account').value='';
+  renderWallet();
 }
 
 // ─── News Page ────────────────────────────────────────────────
@@ -926,13 +1003,23 @@ window.openIPOSubscribe=(sym)=>{
   const sess=State.get('session');if(!sess)return;
   const port=State.get(`portfolio.${sess.userId}`)||{};
   const maxLots=Math.floor((port.cash_idr||0)/(price*1.001));
-  const lotInput=prompt(`Subscribe IPO ${sym}\nHarga: ${fmtP(price,ipo.currency)}\nMaks lot kamu: ${maxLots.toLocaleString()}\n\nMasukkan jumlah lot:`);
-  if(!lotInput)return;
-  const lots=parseInt(lotInput);
-  if(!lots||lots<=0){toast('Jumlah lot tidak valid','error');return;}
-  const r=subscribeToIPO(sess.userId,sym,lots);
-  r.ok?toast(`✅ Subscribe ${sym} ${lots.toLocaleString()} lot berhasil! Dana ${fmtM(r.cost,'IDR')} diblokir.`,'success'):toast(`❌ ${r.error}`,'error');
-  renderIPOPage();
+  openInputModal({
+    title:`Subscribe IPO ${sym}`,
+    message:`Harga ${fmtP(price,ipo.currency)} · Maks lot ${maxLots.toLocaleString()}`,
+    placeholder:'Masukkan jumlah lot',
+    confirmText:'Subscribe',
+    defaultValue:'1',
+    inputType:'number',
+    onConfirm:(raw)=>{
+      const lots=parseInt(raw,10);
+      if(!lots||lots<=0){toast('Jumlah lot tidak valid','error');return false;}
+      const r=subscribeToIPO(sess.userId,sym,lots);
+      if(!r.ok){ toast(`❌ ${r.error}`,'error'); return false; }
+      toast(`✅ Subscribe ${sym} ${lots.toLocaleString()} lot berhasil! Dana ${fmtM(r.cost,'IDR')} diblokir.`,'success');
+      renderIPOPage();
+      return true;
+    },
+  });
 };
 
 function renderIPOPage(){
@@ -977,6 +1064,7 @@ function renderIPOPage(){
 function renderControlPanel(){
   const suspended=State.get('suspendedAssets')||{};
   const ihsgHalted=State.get('ihsgHalted')||false;
+  const marketAct=State.get('marketActivity')||{all:1,stocks:1,crypto:1,forex:1};
 
   const sl=$('ctrl-suspended-list');
   if(sl){
@@ -989,14 +1077,62 @@ function renderControlPanel(){
   const haltBtn=$('btn-ihsg-halt');
   if(haltBtn){haltBtn.textContent=ihsgHalted?'▶ Resume IHSG':'⏸ Halt IHSG';haltBtn.className=`ctrl-big-btn ${ihsgHalted?'green':'red'}`;}
   setEl('ihsg-halt-status',ihsgHalted?`🔴 IHSG DIHENTIKAN: ${State.get('ihsgHaltReason')||''}` :'🟢 IHSG Normal');
+  const targetSel=$('market-activity-target');
+  const slider=$('market-activity-slider');
+  const valLbl=$('market-activity-value');
+  if(targetSel&&slider&&valLbl){
+    const key=targetSel.value||'all';
+    slider.value=String(marketAct[key]??1);
+    valLbl.textContent=`${parseFloat(slider.value).toFixed(2)}x`;
+  }
+
+  const sess=State.get('session');
+  const rugList=$('ctrl-rugpull-list');
+  if(rugList&&sess){
+    const port=State.get(`portfolio.${sess.userId}`)||{};
+    const candidates=Object.entries(port.holdings||{}).filter(([sym,h])=>{
+      if(!h||h.qty<=0) return false;
+      const asset=allAssets().find(a=>a.symbol===sym);
+      return !!asset?.custom&&!!asset?.isCrypto;
+    });
+    rugList.innerHTML=!candidates.length
+      ?'<div class="empty-msg">Belum ada custom crypto yang bisa dirugpull</div>'
+      :candidates.map(([sym,h])=>`<div class="ctrl-item">
+          <div><div class="ctrl-sym">${sym}</div><div class="ctrl-reason">${h.qty.toLocaleString()} coin tersedia</div></div>
+          <button class="ctrl-big-btn red" style="height:34px;padding:0 10px;font-size:11px" onclick="window.rugPullUI('${sym}')">Rugpull</button>
+        </div>`).join('');
+  }
 }
 
 window.suspendAssetUI=(sym)=>{
-  const reason=prompt(`Alasan suspensi ${sym}:`)||'Investigasi bursa';
-  suspendAsset(sym,reason); renderControlPanel();
+  openInputModal({
+    title:`Suspensi ${sym}`,
+    message:'Masukkan alasan suspensi aset.',
+    placeholder:'Contoh: Unusual market activity',
+    defaultValue:'Investigasi bursa',
+    confirmText:'Suspensi',
+    onConfirm:(reasonRaw)=>{
+      const reason=(reasonRaw||'').trim()||'Investigasi bursa';
+      suspendAsset(sym,reason); renderControlPanel();
+      return true;
+    },
+  });
 };
 window.unsuspendAssetUI=(sym)=>{ unsuspendAsset(sym); renderControlPanel(); };
-window.haltIHSGUI=()=>{ const reason=prompt('Alasan IHSG halt:')||'Circuit Breaker'; haltIHSG(reason); renderControlPanel(); };
+window.haltIHSGUI=()=>{
+  openInputModal({
+    title:'Halt IHSG',
+    message:'Masukkan alasan penghentian perdagangan sementara.',
+    placeholder:'Contoh: Circuit breaker level 1',
+    defaultValue:'Circuit Breaker',
+    confirmText:'Halt',
+    onConfirm:(reasonRaw)=>{
+      const reason=(reasonRaw||'').trim()||'Circuit Breaker';
+      haltIHSG(reason); renderControlPanel();
+      return true;
+    },
+  });
+};
 window.resumeIHSGUI=()=>{ resumeIHSG(); renderControlPanel(); };
 window.rugPullUI=(sym)=>{
   const sess=State.get('session');if(!sess)return;
@@ -1005,11 +1141,17 @@ window.rugPullUI=(sym)=>{
   if(!hld||hld.qty<=0){toast(`Kamu tidak pegang ${sym}. Bikin dulu crypto-nya.`,'error');return;}
   const ps=State.get(`prices.${sym}`);
   const val=round((ps?.last||0)*hld.qty,0);
-  const confirm=window.confirm(`⚠️ RUGPULL ${sym}?\n\nKamu akan jual semua ${hld.qty.toLocaleString()} lot senilai ${fmtM(val,'IDR')}.\n\n• Harga ${sym} akan crash 80-95%\n• 20% kemungkinan kena DENDA 150% = ${fmtM(val*1.5,'IDR')}\n• 80% aman, tapi banjir hujatan di sosmed\n\nLanjutkan?`);
-  if(!confirm)return;
-  const r=rugPullCrypto(sess.userId,sym);
-  if(r.ok){toast(`💰 Rugpull berhasil. Profit: ${fmtM(r.profit,'IDR')}${r.fined?` | ⚖️ DENDA: ${fmtM(r.fine,'IDR')}`:''}`,r.fined?'error':'warn');}
-  else toast(`❌ ${r.error}`,'error');
+  openConfirmModal({
+    title:`RUGPULL ${sym}`,
+    message:`Kamu akan jual ${hld.qty.toLocaleString()} lot (≈ ${fmtM(val,'IDR')}).\nHarga dapat crash 80-95% dan berisiko denda OJK 150%.`,
+    confirmText:'Lanjutkan',
+    danger:true,
+    onConfirm:()=>{
+      const r=rugPullCrypto(sess.userId,sym);
+      if(r.ok){toast(`💰 Rugpull berhasil. Profit: ${fmtM(r.profit,'IDR')}${r.fined?` | ⚖️ DENDA: ${fmtM(r.fine,'IDR')}`:''}`,r.fined?'error':'warn');}
+      else toast(`❌ ${r.error}`,'error');
+    }
+  });
 };
 
 // ─── Crypto Creator ───────────────────────────────────────────
@@ -1099,6 +1241,9 @@ function bindAll(){
     State.set('activeTimeframe',b.dataset.tf);if(chart&&chartInited)chart.load(State.get('activeAsset'),b.dataset.tf);
   }));
   document.querySelectorAll('.ind-btn').forEach(b=>b.addEventListener('click',()=>{b.classList.toggle('active');chart?.toggleIndicator(b.dataset.ind);}));
+  $('btn-zoom-in')?.addEventListener('click',()=>{chart?.zoomIn(2);});
+  $('btn-zoom-out')?.addEventListener('click',()=>{chart?.zoomOut(2);});
+  $('btn-zoom-reset')?.addEventListener('click',()=>{chart?.resetZoom();});
   document.querySelectorAll('.speed-btn:not(.speed-day)').forEach(b=>b.addEventListener('click',()=>{
     document.querySelectorAll('.speed-btn:not(.speed-day)').forEach(x=>x.classList.remove('active'));b.classList.add('active');
     State.set('simSpeed',parseInt(b.dataset.speed));updateSimTime();
@@ -1123,18 +1268,37 @@ function bindAll(){
     const port=State.get(`portfolio.${sess.userId}`)||{};
     if((port.cash_idr||0)<fee){toast(`Biaya listing: ${fmtM(fee,'IDR')}`,'error');return;}
     State.merge(`portfolio.${sess.userId}`,{cash_idr:(port.cash_idr||0)-fee});
-    const newA={symbol:sym,name,sector,basePrice:price,vol,liq:'medium',syariah:type==='syariah',currency:cur,custom:true,description:desc,phase:'listing',offerPrice:price,subscribed:1,phaseEnd:new Date(Date.now()+7*24*3600000).toISOString().substring(0,10)};
+    const simNow=State.get('simTime')||new Date();
+    const newA={symbol:sym,name,sector,basePrice:price,vol,liq:'medium',syariah:type==='syariah',currency:cur,custom:true,description:desc,phase:'prelisting',offerPrice:price,subscribed:0,phaseEnd:new Date(simNow.getTime()+2*24*3600000).toISOString()};
     State.set('customAssets',[...(State.get('customAssets')||[]),newA]);
-    const assets=State.get('assets')||{};if(!assets[type])assets[type]=[];assets[type].push(newA);State.set('assets',assets);assetsData=assets;
-    const dec=cur==='IDR'?0:6;
-    State.set(`prices.${sym}`,{symbol:sym,name,sector,syariah:type==='syariah',currency:cur,vol,liq:'medium',last:price,open:price,high:price,low:price,bid:round(price*.999,dec),ask:round(price*1.001,dec),volume:0,change:0,changePct:0});
-    const evt={id:'LIST'+Date.now(),symbol:sym,message:`${sym} (${name}) resmi listing! Harga perdana: ${fmtP(price,cur)}`,sentiment:0.05,category:'ipo',time:new Date().toISOString(),read:false};
+    const assets=State.get('assets')||{}; State.set('assets',assets); assetsData=assets;
+    const evt={id:'LIST'+Date.now(),symbol:sym,message:`${sym} (${name}) masuk antrean IPO. Fase prelisting dimulai sekarang.`,sentiment:0.03,category:'ipo',time:new Date().toISOString(),read:false};
     State.push('newsEvents',evt);State.emit('news.new',evt);State.saveToStorage();
-    toast(`🚀 ${sym} berhasil listing! Fee: ${fmtM(fee,'IDR')} dipotong`,'success');
+    toast(`🚀 ${sym} berhasil dibuat untuk IPO! Fee: ${fmtM(fee,'IDR')} dipotong`,'success');
     ['new-asset-symbol','new-asset-name','new-asset-price','new-asset-desc'].forEach(id=>{const e=$(id);if(e)e.value='';});
     renderIPOPage();renderSidebar();renderMarketLists();
   });
   $('btn-create-crypto')?.addEventListener('click',createCryptoUI);
+  $('market-activity-slider')?.addEventListener('input',e=>{
+    const v=parseFloat(e.target.value)||1;
+    setEl('market-activity-value',`${v.toFixed(2)}x`);
+  });
+  $('market-activity-target')?.addEventListener('change',()=>{
+    const cfg=State.get('marketActivity')||{all:1,stocks:1,crypto:1,forex:1};
+    const key=$('market-activity-target')?.value||'all';
+    const v=parseFloat(cfg[key]??1);
+    const s=$('market-activity-slider'); if(s) s.value=String(v);
+    setEl('market-activity-value',`${v.toFixed(2)}x`);
+  });
+  $('btn-apply-market-activity')?.addEventListener('click',()=>{
+    const key=$('market-activity-target')?.value||'all';
+    const v=parseFloat($('market-activity-slider')?.value)||1;
+    const cfg=State.get('marketActivity')||{all:1,stocks:1,crypto:1,forex:1};
+    cfg[key]=Math.max(0.2,Math.min(3,v));
+    State.set('marketActivity',cfg);
+    toast(`Market activity ${key.toUpperCase()} diset ke ${cfg[key].toFixed(2)}x`,'success');
+    State.saveToStorage();
+  });
   $('btn-ihsg-halt')?.addEventListener('click',()=>State.get('ihsgHalted')?window.resumeIHSGUI():window.haltIHSGUI());
   $('btn-suspend-asset')?.addEventListener('click',()=>{const sym=$('suspend-sym-input')?.value?.toUpperCase().trim();if(sym)window.suspendAssetUI(sym);});
   $('btn-export-data')?.addEventListener('click',()=>{
@@ -1150,6 +1314,20 @@ function bindAll(){
     const reader=new FileReader();
     reader.onload=ev=>{const ok=State.importUserData(sess.userId,ev.target.result);if(ok){toast('Data diimpor!','success');setTimeout(()=>{renderPortfolio();renderWallet();updateDesktopPort();refreshHome();},500);}else toast('File tidak valid','error');};
     reader.readAsText(file);e.target.value='';
+  });
+  $('btn-reset-data')?.addEventListener('click',()=>{
+    openConfirmModal({
+      title:'Reset Semua Data',
+      message:'Semua data TradeSim (global & user) akan dihapus dan aplikasi di-reload.',
+      confirmText:'Reset Sekarang',
+      danger:true,
+      onConfirm:()=>{
+        Object.keys(localStorage).forEach(k=>{
+          if(k==='tradesim_global'||k.startsWith('tradesim_user_')) localStorage.removeItem(k);
+        });
+        location.reload();
+      },
+    });
   });
 }
 
@@ -1174,6 +1352,47 @@ function toast(msg,type='info'){
   const t=document.createElement('div');t.className=`toast toast-${type}`;t.textContent=msg;
   c.appendChild(t);setTimeout(()=>t.classList.add('show'),10);
   setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);},4000);
+}
+function openInputModal({title,message,placeholder='',defaultValue='',confirmText='Simpan',inputType='text',onConfirm}){
+  const root=$('custom-modal-root'); if(!root) return;
+  root.innerHTML=`<div class="cm-backdrop">
+    <div class="cm-box">
+      <div class="cm-title">${title||'Input'}</div>
+      <div class="cm-msg">${message||''}</div>
+      <input id="cm-input" class="cm-input" type="${inputType}" value="${defaultValue||''}" placeholder="${placeholder||''}">
+      <div class="cm-actions">
+        <button id="cm-cancel" class="cm-btn">Batal</button>
+        <button id="cm-ok" class="cm-btn primary">${confirmText}</button>
+      </div>
+    </div>
+  </div>`;
+  root.classList.add('show');
+  const close=()=>{ root.classList.remove('show'); root.innerHTML=''; };
+  const input=$('cm-input');
+  $('cm-cancel')?.addEventListener('click',close);
+  $('cm-ok')?.addEventListener('click',()=>{
+    const shouldClose=onConfirm?onConfirm(input?.value):true;
+    if(shouldClose!==false) close();
+  });
+  input?.addEventListener('keydown',(e)=>{ if(e.key==='Enter') $('cm-ok')?.click(); });
+  setTimeout(()=>input?.focus(),25);
+}
+function openConfirmModal({title,message,confirmText='Lanjutkan',danger=false,onConfirm}){
+  const root=$('custom-modal-root'); if(!root) return;
+  root.innerHTML=`<div class="cm-backdrop">
+    <div class="cm-box">
+      <div class="cm-title">${title||'Konfirmasi'}</div>
+      <div class="cm-msg">${(message||'').replace(/\n/g,'<br>')}</div>
+      <div class="cm-actions">
+        <button id="cm-cancel" class="cm-btn">Batal</button>
+        <button id="cm-ok" class="cm-btn ${danger?'danger':'primary'}">${confirmText}</button>
+      </div>
+    </div>
+  </div>`;
+  root.classList.add('show');
+  const close=()=>{ root.classList.remove('show'); root.innerHTML=''; };
+  $('cm-cancel')?.addEventListener('click',close);
+  $('cm-ok')?.addEventListener('click',()=>{ onConfirm?.(); close(); });
 }
 function fmtP(price,currency){
   if(price===null||price===undefined||isNaN(price))return'-';
