@@ -625,15 +625,44 @@ function renderIPOMktList() {
 }
 
 // ─── Order Book ───────────────────────────────────────────────
+function aggregateVisibleOrders(sym){
+  const ordersByUser=State.get('orders')||{};
+  const askMap=new Map(), bidMap=new Map();
+  Object.values(ordersByUser).forEach(list=>{
+    (list||[]).forEach(o=>{
+      if(o.symbol!==sym) return;
+      if(!['pending','partial'].includes(o.status)) return;
+      if(o.type!=='limit'&&o.type!=='take_profit') return;
+      const rem=Math.max(0,(o.qty||0)-(o.filledQty||0));
+      if(rem<=0||!o.price) return;
+      const map=o.side==='buy'?bidMap:askMap;
+      map.set(o.price,(map.get(o.price)||0)+rem);
+    });
+  });
+  return {askMap,bidMap};
+}
+
+function mergeBookSide(base,pendingMap,isAsk){
+  const m=new Map();
+  (base||[]).forEach(l=>m.set(l.price,(m.get(l.price)||0)+(l.qty||0)));
+  pendingMap.forEach((qty,price)=>m.set(price,(m.get(price)||0)+qty));
+  const arr=[...m.entries()].map(([price,qty])=>({price:Number(price),qty:Math.round(qty)}));
+  arr.sort((a,b)=>isAsk?a.price-b.price:b.price-a.price);
+  return arr;
+}
+
 function renderOrderBook() {
   const sym=State.get('activeAsset'); const ob=State.get(`orderBooks.${sym}`); if(!ob) return;
   const ae=$('ob-asks'),be=$('ob-bids'); if(!ae||!be) return;
-  const max=Math.max(...ob.asks.slice(0,10).map(l=>l.qty),...ob.bids.slice(0,10).map(l=>l.qty),1);
-  ae.innerHTML=ob.asks.slice(0,10).reverse().map(l=>`<div class="ob-row ask" data-price="${l.price}"><span class="ob-price down">${fmtP(l.price)}</span><span class="ob-qty">${l.qty.toLocaleString()}</span><div class="ob-bar ask-bar" style="width:${(l.qty/max*100).toFixed(1)}%"></div></div>`).join('');
+  const pending=aggregateVisibleOrders(sym);
+  const asks=mergeBookSide(ob.asks,pending.askMap,true).slice(0,10);
+  const bids=mergeBookSide(ob.bids,pending.bidMap,false).slice(0,10);
+  const max=Math.max(...asks.map(l=>l.qty),...bids.map(l=>l.qty),1);
+  ae.innerHTML=asks.slice().reverse().map(l=>`<div class="ob-row ask" data-price="${l.price}"><span class="ob-price down">${fmtP(l.price)}</span><span class="ob-qty">${l.qty.toLocaleString()}</span><div class="ob-bar ask-bar" style="width:${(l.qty/max*100).toFixed(1)}%"></div></div>`).join('');
   const ps=State.get(`prices.${sym}`);
   const se=$('ob-spread');
-  if(se&&ob.asks[0]&&ob.bids[0]){const sp=((ob.asks[0].price-ob.bids[0].price)/ob.bids[0].price*100).toFixed(3);se.innerHTML=`<span class="ob-mid">${fmtP(ps?.last)}</span><span class="ob-spread-label">Spread: ${sp}%</span>`;}
-  be.innerHTML=ob.bids.slice(0,10).map(l=>`<div class="ob-row bid" data-price="${l.price}"><span class="ob-price up">${fmtP(l.price)}</span><span class="ob-qty">${l.qty.toLocaleString()}</span><div class="ob-bar bid-bar" style="width:${(l.qty/max*100).toFixed(1)}%"></div></div>`).join('');
+  if(se&&asks[0]&&bids[0]){const sp=((asks[0].price-bids[0].price)/Math.max(1e-9,bids[0].price)*100).toFixed(3);se.innerHTML=`<span class="ob-mid">${fmtP(ps?.last)}</span><span class="ob-spread-label">Spread: ${sp}%</span>`;}
+  be.innerHTML=bids.map(l=>`<div class="ob-row bid" data-price="${l.price}"><span class="ob-price up">${fmtP(l.price)}</span><span class="ob-qty">${l.qty.toLocaleString()}</span><div class="ob-bar bid-bar" style="width:${(l.qty/max*100).toFixed(1)}%"></div></div>`).join('');
   [ae,be].forEach(c=>c.querySelectorAll('.ob-row').forEach(r=>r.addEventListener('click',()=>setOBPrice(r.dataset.price))));
 }
 

@@ -258,7 +258,7 @@ function updatePrice(asset,simTime){
   if(ob?.bids?.length&&ob?.asks?.length){
     const bv=ob.bids.slice(0,3).reduce((s,l)=>s+l.qty,0);
     const av=ob.asks.slice(0,3).reduce((s,l)=>s+l.qty,0);
-    imb=(bv-av)/(bv+av+1)*0.0002;
+    imb=(bv-av)/(bv+av+1)*0.0006;
   }
   const orderPressure=getPendingOrderPressure(symbol);
   const paceFactor=(!isForex&&currency==='IDR')?0.35:(isForex?0.55:1);
@@ -337,7 +337,7 @@ function getPendingOrderPressure(symbol){
   });
   if(!buyQty&&!sellQty) return 0;
   const net=(buyQty-sellQty)/(buyQty+sellQty+1);
-  return net*0.0025;
+  return net*0.0045;
 }
 
 // ─── Correlations & AUM ──────────────────────────────────────
