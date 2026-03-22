@@ -257,11 +257,32 @@ function tradesimTransfer(amt,toTrade){
     const acc=resolveTradeSimAccount();
     if(!acc) return false;
     const {u,port,portfolioKey,key}=acc;
+    const uid=portfolioKey||u.session?.userId||Object.keys(u.portfolio||{})[0]||null;
     const cur=port.cash_idr||0;
     if(toTrade){ port.cash_idr=cur+amt; }
     else { if(cur<amt) return false; port.cash_idr=cur-amt; }
     if(portfolioKey) u.portfolio[portfolioKey]=port;
     else u.portfolio=port;
+
+    const now=new Date().toISOString();
+    const depByUser=(u.deposits&&typeof u.deposits==='object')?u.deposits:{};
+    const depList=Array.isArray(depByUser[uid])?depByUser[uid]:[];
+    depList.unshift({
+      id:(toTrade?'DEP':'WD')+Date.now().toString(36).toUpperCase(),
+      userId:uid,
+      type:toTrade?'deposit':'withdraw',
+      amount:amt,
+      amountIDR:amt,
+      currency:'IDR',
+      method:'Transfer TokoSim',
+      status:'success',
+      adminNote:toTrade?'Dana masuk dari TokoSim':'Dana ditarik ke TokoSim',
+      createdAt:now,
+      processedAt:now,
+    });
+    depByUser[uid]=depList.slice(0,200);
+    u.deposits=depByUser;
+
     localStorage.setItem(key,JSON.stringify(u));
     return true;
   }catch(e){ return false; }
